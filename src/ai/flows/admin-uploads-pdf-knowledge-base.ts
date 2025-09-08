@@ -13,7 +13,7 @@ import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
-import { media } from 'genkit/media';
+import { media } from 'genkit';
 
 
 export type KnowledgeDocument = {
