@@ -12,7 +12,7 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, app } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 import { media } from 'genkit';
 import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
@@ -68,7 +68,7 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
 const KNOWLEDGE_COLLECTION = 'knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 
-const storage = getStorage();
+const storage = getStorage(app, 'gs://m-health-jxug7.firebasestorage.app');
 
 const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   {
