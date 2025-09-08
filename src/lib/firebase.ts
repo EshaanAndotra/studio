@@ -8,7 +8,6 @@ const firebaseConfig = {
   storageBucket: 'm-health-jxug7.firebasestorage.app',
   apiKey: 'AIzaSyBOg1Bfwx_Gjbx7DO4i54KjAJKKq-dZ5lg',
   authDomain: 'm-health-jxug7.firebaseapp.com',
-  measurementId: 'G-7K11Y627B5',
   messagingSenderId: '284239863057',
 };
 
