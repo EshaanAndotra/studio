@@ -2,11 +2,20 @@
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  onSnapshot,
+  where,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import {
   Bot,
   Loader2,
   Send,
   Trash2,
-  User,
   LogOut,
   MessageSquare,
 } from 'lucide-react';
@@ -28,8 +37,10 @@ import { chatbotAnswersQuestions } from '@/ai/flows/chatbot-answers-questions-fr
 import { useToast } from '@/hooks/use-toast';
 
 export type Message = {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
+  createdAt?: any;
 };
 
 export default function ChatPage() {
@@ -39,6 +50,34 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (user) {
+      const q = query(
+        collection(db, 'chats', user.id, 'messages'),
+        orderBy('createdAt', 'asc')
+      );
+      const unsubscribe = onSnapshot(
+        q,
+        (querySnapshot) => {
+          const newMessages: Message[] = [];
+          querySnapshot.forEach((doc) => {
+            newMessages.push({ id: doc.id, ...doc.data() } as Message);
+          });
+          setMessages(newMessages);
+        },
+        (error) => {
+          toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'Could not load chat history.',
+          });
+        }
+      );
+
+      return () => unsubscribe();
+    }
+  }, [user, toast]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -52,37 +91,54 @@ export default function ChatPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !user) return;
 
-    const userMessage: Message = { role: 'user', content: input };
-    setMessages((prev) => [...prev, userMessage]);
+    const userMessageContent = input;
     setInput('');
+
+    const userMessage: Message = {
+      role: 'user',
+      content: userMessageContent,
+      createdAt: serverTimestamp(),
+    };
+    await addDoc(collection(db, 'chats', user.id, 'messages'), userMessage);
+    
     setIsLoading(true);
 
     try {
-      const { answer } = await chatbotAnswersQuestions({ question: input });
-      const assistantMessage: Message = { role: 'assistant', content: answer };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const { answer } = await chatbotAnswersQuestions({ question: userMessageContent });
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: answer,
+        createdAt: serverTimestamp(),
+      };
+      await addDoc(collection(db, 'chats', user.id, 'messages'), assistantMessage);
     } catch (error) {
       toast({
         variant: 'destructive',
         title: 'Error',
         description: 'Failed to get a response from the AI.',
       });
-       const assistantMessage: Message = { role: 'assistant', content: "Sorry, I couldn't process your request." };
-       setMessages((prev) => [...prev, assistantMessage]);
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: "Sorry, I couldn't process your request.",
+        createdAt: serverTimestamp(),
+      };
+      await addDoc(collection(db, 'chats', user.id, 'messages'), assistantMessage);
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const clearChat = () => {
+    // This will be more complex with Firestore, for now it only clears local state
+    // To clear firestore, we would need a cloud function or batched deletes.
     setMessages([]);
     toast({
       title: 'Conversation Cleared',
-      description: 'Your chat history has been cleared from this session.',
+      description: 'Your local chat history has been cleared for this session.',
     });
-  }
+  };
 
   return (
     <div className="flex h-screen w-full flex-col bg-background">
@@ -92,12 +148,20 @@ export default function ChatPage() {
           <span className="font-headline text-lg">M-Health Assistant</span>
         </div>
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={clearChat} aria-label="Clear conversation">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={clearChat}
+            aria-label="Clear conversation"
+          >
             <Trash2 className="h-5 w-5" />
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+              <Button
+                variant="ghost"
+                className="relative h-8 w-8 rounded-full"
+              >
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-primary text-primary-foreground">
                     {user?.name.charAt(0).toUpperCase()}
@@ -108,7 +172,9 @@ export default function ChatPage() {
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{user?.name}</p>
+                  <p className="text-sm font-medium leading-none">
+                    {user?.name}
+                  </p>
                   <p className="text-xs leading-none text-muted-foreground">
                     {user?.email}
                   </p>
@@ -126,7 +192,7 @@ export default function ChatPage() {
       <main className="flex-1 overflow-hidden">
         <ScrollArea className="h-full" ref={scrollAreaRef}>
           <div className="p-4 md:p-6">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !isLoading ? (
               <div className="flex h-[calc(100vh-12rem)] flex-col items-center justify-center text-center">
                 <MessageSquare className="mb-4 h-16 w-16 text-muted-foreground/30" />
                 <h3 className="text-xl font-semibold text-muted-foreground">
@@ -138,17 +204,17 @@ export default function ChatPage() {
               </div>
             ) : (
               <div className="space-y-6">
-                {messages.map((msg, index) => (
-                  <ChatMessage key={index} message={msg} />
+                {messages.map((msg) => (
+                  <ChatMessage key={msg.id} message={msg} />
                 ))}
                 {isLoading && (
                   <div className="flex items-start gap-3 justify-start">
-                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                        <Bot size={20} />
-                     </div>
-                     <div className="max-w-md rounded-lg rounded-bl-none bg-card px-4 py-3 text-sm shadow-md">
-                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                     </div>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Bot size={20} />
+                    </div>
+                    <div className="max-w-md rounded-lg rounded-bl-none bg-card px-4 py-3 text-sm shadow-md">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
                   </div>
                 )}
               </div>
@@ -169,7 +235,11 @@ export default function ChatPage() {
             disabled={isLoading}
             className="flex-1"
           />
-          <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+          <Button
+            type="submit"
+            size="icon"
+            disabled={isLoading || !input.trim()}
+          >
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home,
-  Users,
+  MessageSquare,
   BrainCircuit,
   PanelLeft,
   LogOut,
@@ -68,6 +68,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const navItems = [
     { href: '/admin', icon: Home, label: 'Dashboard' },
     { href: '/admin/knowledge', icon: BrainCircuit, label: 'Knowledge Base' },
+    { href: '/admin/history', icon: MessageSquare, label: 'Chat History' },
   ];
 
   return (
@@ -87,7 +88,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               <SidebarMenuItem key={item.href}>
                 <Link href={item.href}>
                   <SidebarMenuButton
-                    isActive={pathname === item.href}
+                    isActive={pathname.startsWith(item.href)}
                     tooltip={{ children: item.label, side: 'right' }}
                   >
                     <div>
