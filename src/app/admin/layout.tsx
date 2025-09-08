@@ -10,6 +10,7 @@ import {
   LogOut,
   Bot,
 } from 'lucide-react';
+import { useEffect } from 'react';
 
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -50,17 +51,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  if (loading) {
-    return <LoadingSpinner />;
-  }
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace('/login');
+    } else if (user.role !== 'admin') {
+      router.replace('/');
+    }
+  }, [user, loading, router]);
 
-  if (!user) {
-    router.replace('/login');
-    return <LoadingSpinner />;
-  }
 
-  if (user.role !== 'admin') {
-    router.replace('/');
+  if (loading || !user || user.role !== 'admin') {
     return <LoadingSpinner />;
   }
   
@@ -85,9 +86,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <SidebarMenu>
             {navItems.map((item) => (
               <SidebarMenuItem key={item.href}>
-                <Link href={item.href} passHref>
+                <Link href={item.href}>
                   <SidebarMenuButton
-                    asChild
                     isActive={pathname === item.href}
                     tooltip={{ children: item.label, side: 'right' }}
                   >
