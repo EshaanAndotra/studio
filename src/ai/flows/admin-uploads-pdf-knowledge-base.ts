@@ -15,7 +15,7 @@ import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, de
 import { db, app } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 import { media } from 'genkit';
-import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from "firebase/storage";
+import { getStorage, ref, uploadString, getDownloadURL, deleteObject, getBytes } from "firebase/storage";
 
 
 export type KnowledgeDocument = {
@@ -176,7 +176,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
 const rebuildKnowledgeBaseFlow = ai.defineFlow({
     name: 'rebuildKnowledgeBaseFlow',
     inputSchema: z.undefined(),
-    outputSchema: z.object({ success: z.boolean(), message: z.string() }),
+    outputSchema: z.object({ success: boolean(), message: z.string() }),
 }, async () => {
     try {
         const allDocs = await getKnowledgeDocuments();
@@ -185,17 +185,13 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         for (const docInfo of allDocs) {
             try {
                 const fileRef = ref(storage, docInfo.filePath);
-                const downloadUrl = await getDownloadURL(fileRef);
+
+                // Download the file contents as a buffer
+                const fileBuffer = await getBytes(fileRef);
                 
-                const response = await fetch(downloadUrl);
-                if (!response.ok) {
-                    console.warn(`Could not fetch ${docInfo.fileName}, skipping. Status: ${response.status}`);
-                    continue;
-                }
-                const buffer = await response.arrayBuffer();
-                const mimeType = response.headers.get('content-type') || 'application/pdf';
-                const base64 = Buffer.from(buffer).toString('base64');
-                const dataUri = `data:${mimeType};base64,${base64}`;
+                // Convert buffer to a base64 data URI
+                const base64 = Buffer.from(fileBuffer).toString('base64');
+                const dataUri = `data:application/pdf;base64,${base64}`;
 
                 const textContent = await googleAI.extractText(
                   media({uri: dataUri})

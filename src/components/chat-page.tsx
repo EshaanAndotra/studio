@@ -130,13 +130,16 @@ export default function ChatPage() {
     }
   };
 
-  const clearChat = () => {
-    // This will be more complex with Firestore, for now it only clears local state
-    // To clear firestore, we would need a cloud function or batched deletes.
+  const clearChat = async () => {
+    if (!user) return;
+
+    // This is a more complex operation, for now we will just clear the local state
+    // and show a toast. For a real implementation, a Cloud Function would be better
+    // to delete all subcollection documents.
     setMessages([]);
     toast({
-      title: 'Conversation Cleared',
-      description: 'Your local chat history has been cleared for this session.',
+        title: 'Chat Cleared (Locally)',
+        description: 'Your conversation view has been cleared. Note: History is still saved.',
     });
   };
 
