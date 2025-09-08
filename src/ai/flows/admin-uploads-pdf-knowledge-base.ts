@@ -176,7 +176,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
 const rebuildKnowledgeBaseFlow = ai.defineFlow({
     name: 'rebuildKnowledgeBaseFlow',
     inputSchema: z.undefined(),
-    outputSchema: z.object({ success: boolean(), message: z.string() }),
+    outputSchema: z.object({ success: z.boolean(), message: z.string() }),
 }, async () => {
     try {
         const allDocs = await getKnowledgeDocuments();
