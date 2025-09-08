@@ -11,7 +11,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch, FieldValue } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db, app } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 import { media } from 'genkit';
@@ -78,8 +78,6 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      const batch = writeBatch(db);
-
       // 1. Extract text and prepare file uploads in parallel
       const processingPromises = input.documents.map(async (document) => {
         const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
@@ -87,17 +85,14 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
         const filePath = `knowledge_base/${Date.now()}_${document.fileName}`;
         const storageRef = ref(storage, filePath);
         
-        // Prepare metadata for Firestore
-        const newDocRef = doc(collection(db, 'knowledge_documents'));
-        batch.set(newDocRef, {
-          fileName: document.fileName,
-          uploadedAt: serverTimestamp(),
-          filePath: filePath,
-        });
-
-        // Return upload promise and extracted text
+        // Return upload promise, metadata, and extracted text
         return {
           uploadPromise: uploadString(storageRef, document.pdfDataUri, 'data_url'),
+          metadata: {
+            fileName: document.fileName,
+            uploadedAt: serverTimestamp(),
+            filePath: filePath,
+          },
           textContent: `\n\n--- Content from ${document.fileName} ---\n\n${textContent}`,
         };
       });
@@ -109,8 +104,17 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
 
       // 3. Combine all text content
       const combinedTextContent = processedDocs.map(p => p.textContent).join('');
+      
+      // 4. Create an atomic batch write for all Firestore operations
+      const batch = writeBatch(db);
 
-      // 4. Update the main knowledge document in the same batch
+      // Add new document metadata to the batch
+      processedDocs.forEach(p => {
+        const newDocRef = doc(collection(db, 'knowledge_documents'));
+        batch.set(newDocRef, p.metadata);
+      });
+
+      // Add knowledge base update to the batch
       const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
       const knowledgeDoc = await getDoc(knowledgeDocRef);
 
@@ -196,7 +200,7 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 const fileBuffer = await getBytes(fileRef);
                 
                 // Convert buffer to a base64 data URI
-                const base64 = Buffer.from(fileBuffer).toString('base64');
+                const base64 = fileBuffer.toString('base64');
                 const dataUri = `data:application/pdf;base64,${base64}`;
 
                 const textContent = await googleAI.extractText(
