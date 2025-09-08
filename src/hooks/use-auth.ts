@@ -4,7 +4,9 @@ import { useState, useEffect, useContext } from 'react';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
+  updateProfile,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
@@ -16,6 +18,7 @@ export type UseAuthReturn = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
+  signUp: (name: string, email: string, password: string) => Promise<User>;
   logout: () => void;
 };
 
@@ -39,7 +42,7 @@ async function getUserProfile(uid: string): Promise<User | null> {
       email: userData.email,
       role: userData.role,
       loginCount: userData.loginCount,
-      createdAt: userData.createdAt.toDate().toISOString(),
+      createdAt: userData.createdAt?.toDate().toISOString() ?? new Date().toISOString(),
     };
   }
   return null;
@@ -75,29 +78,17 @@ export function useAuthHook(): UseAuthReturn {
       
       let userProfile = await getUserProfile(firebaseUser.uid);
 
-      if (!userProfile) {
-        // If profile doesn't exist, create it in Firestore.
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const newProfile: User = {
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || email.split('@')[0],
-            email: firebaseUser.email!,
-            role: email === 'admin@mhealth.com' ? 'admin' : 'user', // Assign role based on email for seeding
-            loginCount: 1,
-            createdAt: new Date().toISOString(),
-        };
-        // Use serverTimestamp() for Firestore, but keep ISO string for the object
-        await setDoc(userDocRef, { ...newProfile, createdAt: serverTimestamp() });
-        userProfile = newProfile;
-        
-      } else {
-        // Profile exists, so just update login count
+      if (userProfile) {
+        // Profile exists, so update login count
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const newLoginCount = (userProfile.loginCount || 0) + 1;
         await updateDoc(userDocRef, {
             loginCount: newLoginCount,
         });
         userProfile.loginCount = newLoginCount;
+      } else {
+        // This case is unlikely if signUp is used, but as a fallback:
+         userProfile = await createUserProfile(firebaseUser, firebaseUser.displayName || email.split('@')[0], 1);
       }
 
       setUser(userProfile);
@@ -110,18 +101,60 @@ export function useAuthHook(): UseAuthReturn {
         if (error.code === 'auth/too-many-requests') {
             throw new Error('Too many login attempts. Please try again later.');
         }
-        // Rethrow other errors
-        throw error;
+        throw new Error(error.message || 'An unknown error occurred during login.');
     }
     finally {
       setLoading(false);
     }
   };
 
+  const signUp = async (name: string, email: string, password: string): Promise<User> => {
+    setLoading(true);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // Update Firebase Auth profile
+      await updateProfile(firebaseUser, { displayName: name });
+
+      // Create user profile in Firestore
+      const userProfile = await createUserProfile(firebaseUser, name);
+      
+      setUser(userProfile);
+      return userProfile;
+
+    } catch (error: any) {
+      if (error.code === 'auth/email-already-in-use') {
+        throw new Error('This email is already registered. Please sign in or use a different email.');
+      }
+      if (error.code === 'auth/weak-password') {
+        throw new Error('The password is too weak. Please use at least 6 characters.');
+      }
+      throw new Error(error.message || 'An unknown error occurred during sign up.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const createUserProfile = async (firebaseUser: FirebaseUser, name: string, initialLoginCount = 1): Promise<User> => {
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const newUserProfile: User = {
+          id: firebaseUser.uid,
+          name: name,
+          email: firebaseUser.email!,
+          role: firebaseUser.email === 'admin@mhealth.com' ? 'admin' : 'user',
+          loginCount: initialLoginCount,
+          createdAt: new Date().toISOString(),
+      };
+      // Use serverTimestamp() for Firestore, but keep ISO string for the local object
+      await setDoc(userDocRef, { ...newUserProfile, createdAt: serverTimestamp(), lastLogin: serverTimestamp() });
+      return newUserProfile;
+  }
+
   const logout = async () => {
     await signOut(auth);
     setUser(null);
   };
 
-  return { user, loading, login, logout };
+  return { user, loading, login, signUp, logout };
 }
