@@ -9,7 +9,7 @@ import {
   updateProfile,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc, increment } from 'firebase/firestore';
 import { AuthContext } from '@/components/auth-provider';
 import { type User } from '@/lib/auth';
 import { auth, db } from '@/lib/firebase';
@@ -76,19 +76,20 @@ export function useAuthHook(): UseAuthReturn {
       );
       const firebaseUser = userCredential.user;
       
-      let userProfile = await getUserProfile(firebaseUser.uid);
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
 
-      if (userProfile) {
+      let userProfile: User;
+
+      if (userDoc.exists()) {
         // Profile exists, so update login count
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const newLoginCount = (userProfile.loginCount || 0) + 1;
         await updateDoc(userDocRef, {
-            loginCount: newLoginCount,
+            loginCount: increment(1),
         });
-        userProfile.loginCount = newLoginCount;
+        userProfile = (await getUserProfile(firebaseUser.uid))!;
       } else {
-        // This case is unlikely if signUp is used, but as a fallback:
-         userProfile = await createUserProfile(firebaseUser, firebaseUser.displayName || email.split('@')[0], 'user', 1);
+        // This case is for users created in Firebase console but not in firestore
+         userProfile = await createUserProfile(firebaseUser, firebaseUser.displayName || email.split('@')[0], 'user');
       }
 
       setUser(userProfile);
@@ -137,19 +138,22 @@ export function useAuthHook(): UseAuthReturn {
     }
   }
 
-  const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role: 'user' | 'admin', initialLoginCount = 1): Promise<User> => {
+  const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role: 'user' | 'admin'): Promise<User> => {
       const userDocRef = doc(db, 'users', firebaseUser.uid);
-      const newUserProfile: User = {
+      const newUserProfile: Omit<User, 'createdAt'> & {createdAt: any, lastLogin: any} = {
           id: firebaseUser.uid,
           name: name,
           email: firebaseUser.email!,
           role: role,
-          loginCount: initialLoginCount,
-          createdAt: new Date().toISOString(),
+          loginCount: 1,
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
       };
-      // Use serverTimestamp() for Firestore, but keep ISO string for the local object
-      await setDoc(userDocRef, { ...newUserProfile, createdAt: serverTimestamp(), lastLogin: serverTimestamp() });
-      return newUserProfile;
+      
+      await setDoc(userDocRef, newUserProfile);
+      
+      const createdProfile = await getUserProfile(firebaseUser.uid);
+      return createdProfile!;
   }
 
   const logout = async () => {
