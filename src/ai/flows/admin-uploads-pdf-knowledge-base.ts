@@ -11,7 +11,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { extractText } from '@genkit-ai/googleai';
+import { googleAI } from '@genkit-ai/googleai';
 
 
 export type KnowledgeDocument = {
@@ -57,7 +57,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
           }
       };
       
-      const textContent = await extractText(mediaPart);
+      const textContent = await googleAI.extractText(mediaPart);
 
       // Add document metadata to the 'knowledge_documents' collection
       await addDoc(collection(db, 'knowledge_documents'), {
