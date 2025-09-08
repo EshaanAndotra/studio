@@ -130,7 +130,7 @@ export default function ChatHistoryPage() {
                 const usersQuery = query(collection(db, 'users'), orderBy('name', 'asc'));
                 const querySnapshot = await getDocs(usersQuery);
                 const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-                setUsers(usersList);
+                setUsers(usersList.filter(u => u.role === 'user'));
             } catch (error) {
                 console.error("Error fetching users:", error);
             } finally {

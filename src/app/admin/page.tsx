@@ -3,14 +3,18 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Users, BrainCircuit, BarChart3, Clock, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
-import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
+import { collection, getDocs, limit, orderBy, query, aggregate, sum, average } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { formatDistanceToNow } from 'date-fns';
+import { getKnowledgeDocuments, type KnowledgeDocument } from "@/ai/flows/admin-uploads-pdf-knowledge-base";
 
 type DashboardStats = {
   totalUsers: number;
+  knowledgeBaseDocs: number;
+  avgLogins: number;
   lastLogin: string | null;
   recentUser: { name: string; email: string; createdAt: string } | null;
+  lastKnowledgeUpdate: string | null;
 };
 
 function StatCard({ title, value, icon: Icon, description }: { title: string, value: string | number, icon: React.ElementType, description: string }) {
@@ -36,10 +40,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        // Fetch total users
         const usersCollection = collection(db, 'users');
-        const userSnapshot = await getDocs(usersCollection);
+
+        // Fetch total users, avg logins
+        const userQuery = query(usersCollection);
+        const userSnapshot = await getDocs(userQuery);
         const totalUsers = userSnapshot.size;
+        const totalLogins = userSnapshot.docs.reduce((acc, doc) => acc + (doc.data().loginCount || 0), 0);
+        const avgLogins = totalUsers > 0 ? parseFloat((totalLogins / totalUsers).toFixed(1)) : 0;
 
         // Fetch last login
         const lastLoginQuery = query(usersCollection, orderBy('lastLogin', 'desc'), limit(1));
@@ -65,7 +73,18 @@ export default function AdminDashboard() {
             };
         }
 
-        setStats({ totalUsers, lastLogin, recentUser });
+        // Fetch knowledge base stats
+        const knowledgeDocs = await getKnowledgeDocuments();
+        const knowledgeBaseDocs = knowledgeDocs.length;
+        let lastKnowledgeUpdate: string | null = null;
+        if (knowledgeDocs.length > 0) {
+            const mostRecentDoc = knowledgeDocs[0]; // Already sorted by date desc
+            if (mostRecentDoc.uploadedAt) {
+                lastKnowledgeUpdate = formatDistanceToNow(new Date(mostRecentDoc.uploadedAt.seconds * 1000), { addSuffix: true });
+            }
+        }
+        
+        setStats({ totalUsers, knowledgeBaseDocs, avgLogins, lastLogin, recentUser, lastKnowledgeUpdate });
 
       } catch (error) {
         console.error("Error fetching dashboard stats:", error);
@@ -86,17 +105,16 @@ export default function AdminDashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {isLoading ? (
                 <>
-                    <Card><CardContent className="pt-6"><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent></Card>
-                    <Card><CardContent className="pt-6"><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent></Card>
-                    <Card><CardContent className="pt-6"><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent></Card>
-                    <Card><CardContent className="pt-6"><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent></Card>
+                    {[...Array(4)].map((_, i) => (
+                      <Card key={i}><CardHeader className="pb-2"></CardHeader><CardContent><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent></Card>
+                    ))}
                 </>
             ) : (
                 <>
                     <StatCard title="Total Users" value={stats?.totalUsers ?? 0} icon={Users} description="All registered users" />
-                    <StatCard title="Knowledge Base" value="12 PDFs" icon={BrainCircuit} description="Documents powering the chatbot" />
-                    <StatCard title="Avg. Logins" value="8.6" icon={BarChart3} description="Average logins per user" />
-                    <StatCard title="Last Login" value={stats?.lastLogin ?? 'N/A'} icon={Clock} description="Most recent user login" />
+                    <StatCard title="Knowledge Base" value={`${stats?.knowledgeBaseDocs ?? 0} Docs`} icon={BrainCircuit} description="Documents powering the chatbot" />
+                    <StatCard title="Avg. Logins" value={stats?.avgLogins ?? 0} icon={BarChart3} description="Average logins per user" />
+                    <StatCard title="Last Active" value={stats?.lastLogin ?? 'N/A'} icon={Clock} description="Most recent user login" />
                 </>
             )}
         </div>
@@ -116,26 +134,23 @@ export default function AdminDashboard() {
                             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/50">
                                 <Users className="h-4 w-4 text-green-600 dark:text-green-400"/>
                             </div>
-                            <p className="text-sm text-muted-foreground">New user registered: <span className="font-medium text-foreground">{stats.recentUser.email}</span></p>
+                            <p className="text-sm text-muted-foreground">New user registered: <span className="font-medium text-foreground">{stats.recentUser.name}</span></p>
                             <p className="ml-auto text-xs text-muted-foreground">{stats.recentUser.createdAt}</p>
                         </div>
                     ) : (
                          <p className="text-sm text-muted-foreground">No new user registrations yet.</p>
                     )}
+                    {stats?.lastKnowledgeUpdate ? (
                      <div className="flex items-center gap-4">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
                             <BrainCircuit className="h-4 w-4 text-blue-600 dark:text-blue-400"/>
                         </div>
-                        <p className="text-sm text-muted-foreground">Knowledge base updated: <span className="font-medium text-foreground">`mental_health_guide.pdf`</span> was added.</p>
-                        <p className="ml-auto text-xs text-muted-foreground">1h ago</p>
+                        <p className="text-sm text-muted-foreground">Knowledge base updated.</p>
+                        <p className="ml-auto text-xs text-muted-foreground">{stats.lastKnowledgeUpdate}</p>
                     </div>
-                     <div className="flex items-center gap-4">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/50">
-                            <BarChart3 className="h-4 w-4 text-yellow-600 dark:text-yellow-400"/>
-                        </div>
-                        <p className="text-sm text-muted-foreground">User <span className="font-medium text-foreground">John Smith</span> reached 20 logins.</p>
-                        <p className="ml-auto text-xs text-muted-foreground">3h ago</p>
-                    </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">No knowledge base updates yet.</p>
+                    )}
                 </div>
                 )}
             </CardContent>

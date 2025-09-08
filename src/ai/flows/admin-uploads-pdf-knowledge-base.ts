@@ -80,7 +80,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
     try {
       // 1. Extract text from all documents in parallel
       const textExtractionPromises = input.documents.map(doc => 
-        googleAI.extractText(media(doc.pdfDataUri)).then(text => ({
+        googleAI.extractText(media({ uri: doc.pdfDataUri })).then(text => ({
           fileName: doc.fileName,
           textContent: text
         }))
@@ -198,7 +198,7 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 const dataUri = `data:${mimeType};base64,${base64}`;
 
                 const textContent = await googleAI.extractText(
-                  media(dataUri)
+                  media({uri: dataUri})
                 );
                 
                 combinedContent += `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
