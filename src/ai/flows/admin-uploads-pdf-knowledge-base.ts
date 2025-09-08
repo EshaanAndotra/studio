@@ -13,6 +13,7 @@ import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
+import { media } from 'genkit/media';
 
 
 export type KnowledgeDocument = {
@@ -65,13 +66,9 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      const mediaPart = {
-          data: {
-              url: input.pdfDataUri
-          }
-      };
-      
-      const textContent = await googleAI.extractText(mediaPart);
+      const textContent = await googleAI.extractText(
+          media(input.pdfDataUri)
+      );
 
       // Add document metadata to the 'knowledge_documents' collection
       await addDoc(collection(db, 'knowledge_documents'), {
