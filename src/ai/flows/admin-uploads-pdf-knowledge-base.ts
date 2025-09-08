@@ -80,26 +80,42 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      // 1. Upload PDF to Firebase Storage
+      const textContent = await googleAI.extractText(
+        media(input.pdfDataUri)
+      );
+      
+      const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
+      const knowledgeDoc = await getDoc(knowledgeDocRef);
+
+      const contentToAppend = `\n\n--- Content from ${input.fileName} ---\n\n${textContent}`;
+
+      if (knowledgeDoc.exists()) {
+        await updateDoc(knowledgeDocRef, {
+          content: (knowledgeDoc.data().content || '') + contentToAppend,
+          lastUpdatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(knowledgeDocRef, {
+          content: contentToAppend,
+          lastUpdatedAt: serverTimestamp(),
+        });
+      }
+
+      // Store metadata about the PDF in a separate collection for display/management
       const filePath = `knowledge_base/${Date.now()}_${input.fileName}`;
       const storageRef = ref(storage, filePath);
       await uploadString(storageRef, input.pdfDataUri, 'data_url');
-      const downloadUrl = await getDownloadURL(storageRef);
-
-      // 2. Add document metadata to 'knowledge_documents' collection
+      
       await addDoc(collection(db, 'knowledge_documents'), {
         fileName: input.fileName,
         uploadedAt: serverTimestamp(),
         filePath: filePath, 
-        downloadUrl: downloadUrl // For potential future use
       });
 
-      // 3. Trigger a rebuild of the knowledge base
-      await rebuildKnowledgeBaseFlow();
 
       return {
         success: true,
-        message: `PDF '${input.fileName}' uploaded successfully. Knowledge base is being updated.`,
+        message: `PDF '${input.fileName}' uploaded and added to knowledge base.`,
       };
     } catch (error) {
       console.error("Error processing PDF:", error);
@@ -159,9 +175,6 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
             const fileRef = ref(storage, docInfo.filePath);
             const downloadUrl = await getDownloadURL(fileRef);
             
-            // Fetching the content from URL might require a different approach depending on environment.
-            // For simplicity, we are assuming direct access, but in production, we would use a data URI if needed.
-            // Here, we'll re-extract text using the downloadURL which works with Genkit's extractText
              const dataUri = await fetch(downloadUrl).then(res => res.blob()).then(blob => {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -180,15 +193,10 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         
         const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
         
-        if (combinedContent) {
-            await setDoc(knowledgeDocRef, {
-                content: combinedContent,
-                lastUpdatedAt: serverTimestamp(),
-            }, { merge: true });
-        } else {
-            // If no documents are left, clear the knowledge base content
-            await setDoc(knowledgeDocRef, { content: '', lastUpdatedAt: serverTimestamp() }, { merge: true });
-        }
+        await setDoc(knowledgeDocRef, {
+            content: combinedContent,
+            lastUpdatedAt: serverTimestamp(),
+        }, { merge: true });
 
         return { success: true, message: 'Knowledge base rebuilt successfully.' };
     } catch (error) {
