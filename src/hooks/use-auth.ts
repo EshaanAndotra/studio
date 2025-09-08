@@ -18,7 +18,7 @@ export type UseAuthReturn = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
-  signUp: (name: string, email: string, password: string) => Promise<User>;
+  signUp: (name: string, email: string, password: string, role: 'user' | 'admin') => Promise<User>;
   logout: () => void;
 };
 
@@ -88,7 +88,7 @@ export function useAuthHook(): UseAuthReturn {
         userProfile.loginCount = newLoginCount;
       } else {
         // This case is unlikely if signUp is used, but as a fallback:
-         userProfile = await createUserProfile(firebaseUser, firebaseUser.displayName || email.split('@')[0], 1);
+         userProfile = await createUserProfile(firebaseUser, firebaseUser.displayName || email.split('@')[0], 'user', 1);
       }
 
       setUser(userProfile);
@@ -108,7 +108,7 @@ export function useAuthHook(): UseAuthReturn {
     }
   };
 
-  const signUp = async (name: string, email: string, password: string): Promise<User> => {
+  const signUp = async (name: string, email: string, password: string, role: 'user' | 'admin'): Promise<User> => {
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -118,12 +118,13 @@ export function useAuthHook(): UseAuthReturn {
       await updateProfile(firebaseUser, { displayName: name });
 
       // Create user profile in Firestore
-      const userProfile = await createUserProfile(firebaseUser, name);
+      const userProfile = await createUserProfile(firebaseUser, name, role);
       
       setUser(userProfile);
       return userProfile;
 
-    } catch (error: any) {
+    } catch (error: any)
+{
       if (error.code === 'auth/email-already-in-use') {
         throw new Error('This email is already registered. Please sign in or use a different email.');
       }
@@ -136,13 +137,13 @@ export function useAuthHook(): UseAuthReturn {
     }
   }
 
-  const createUserProfile = async (firebaseUser: FirebaseUser, name: string, initialLoginCount = 1): Promise<User> => {
+  const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role: 'user' | 'admin', initialLoginCount = 1): Promise<User> => {
       const userDocRef = doc(db, 'users', firebaseUser.uid);
       const newUserProfile: User = {
           id: firebaseUser.uid,
           name: name,
           email: firebaseUser.email!,
-          role: firebaseUser.email === 'admin@mhealth.com' ? 'admin' : 'user',
+          role: role,
           loginCount: initialLoginCount,
           createdAt: new Date().toISOString(),
       };
