@@ -7,7 +7,6 @@
  * - AdminUploadsPdfKnowledgeBaseOutput - The return type for the adminUploadsPdfKnowledgeBase function.
  * - getKnowledgeDocuments - A function to retrieve all knowledge documents.
  * - deleteKnowledgeDocument - A function to delete a knowledge document.
- * - rebuildKnowledgeBase - A function to rebuild the entire knowledge base.
  */
 
 import {ai} from '@/ai/genkit';
@@ -26,7 +25,7 @@ export type KnowledgeDocument = {
   filePath: string;
 };
 
-const AdminUploadsPdfKnowledgeBaseInputSchema = z.object({
+const PdfDocumentSchema = z.object({
   pdfDataUri: z
     .string()
     .describe(
@@ -34,10 +33,14 @@ const AdminUploadsPdfKnowledgeBaseInputSchema = z.object({
     ),
   fileName: z.string().describe('The name of the PDF file.'),
 });
+
+const AdminUploadsPdfKnowledgeBaseInputSchema = z.object({
+  documents: z.array(PdfDocumentSchema)
+});
 export type AdminUploadsPdfKnowledgeBaseInput = z.infer<typeof AdminUploadsPdfKnowledgeBaseInputSchema>;
 
 const AdminUploadsPdfKnowledgeBaseOutputSchema = z.object({
-  success: z.boolean().describe('Whether the PDF was successfully uploaded and processed.'),
+  success: z.boolean().describe('Whether the PDFs were successfully uploaded and processed.'),
   message: z.string().describe('A message indicating the status of the upload and processing.'),
 });
 export type AdminUploadsPdfKnowledgeBaseOutput = z.infer<typeof AdminUploadsPdfKnowledgeBaseOutputSchema>;
@@ -62,11 +65,6 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
     return deleteKnowledgeDocumentFlow({ docId });
 }
 
-export async function rebuildKnowledgeBase(): Promise<{ success: boolean; message: string }> {
-    return rebuildKnowledgeBaseFlow();
-}
-
-
 const KNOWLEDGE_COLLECTION = 'knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 
@@ -80,48 +78,61 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      const textContent = await googleAI.extractText(
-        media(input.pdfDataUri)
+      // 1. Extract text from all documents in parallel
+      const textExtractionPromises = input.documents.map(doc => 
+        googleAI.extractText(media(doc.pdfDataUri)).then(text => ({
+          fileName: doc.fileName,
+          textContent: text
+        }))
       );
+      const extractedDocs = await Promise.all(textExtractionPromises);
       
+      // 2. Combine all text content
+      const combinedTextContent = extractedDocs.map(doc => `\n\n--- Content from ${doc.fileName} ---\n\n${doc.textContent}`).join('');
+
+      // 3. Append to the main knowledge document
       const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
       const knowledgeDoc = await getDoc(knowledgeDocRef);
-
-      const contentToAppend = `\n\n--- Content from ${input.fileName} ---\n\n${textContent}`;
-
       if (knowledgeDoc.exists()) {
         await updateDoc(knowledgeDocRef, {
-          content: (knowledgeDoc.data().content || '') + contentToAppend,
+          content: (knowledgeDoc.data().content || '') + combinedTextContent,
           lastUpdatedAt: serverTimestamp(),
         });
       } else {
         await setDoc(knowledgeDocRef, {
-          content: contentToAppend,
+          content: combinedTextContent,
+          createdAt: serverTimestamp(),
           lastUpdatedAt: serverTimestamp(),
         });
       }
 
-      // Store metadata about the PDF in a separate collection for display/management
-      const filePath = `knowledge_base/${Date.now()}_${input.fileName}`;
-      const storageRef = ref(storage, filePath);
-      await uploadString(storageRef, input.pdfDataUri, 'data_url');
-      
-      await addDoc(collection(db, 'knowledge_documents'), {
-        fileName: input.fileName,
-        uploadedAt: serverTimestamp(),
-        filePath: filePath, 
+      // 4. Upload files to storage and save metadata in a Firestore batch
+      const batch = writeBatch(db);
+      const storageUploadPromises = input.documents.map(async (document) => {
+        const filePath = `knowledge_base/${Date.now()}_${document.fileName}`;
+        const storageRef = ref(storage, filePath);
+        await uploadString(storageRef, document.pdfDataUri, 'data_url');
+        
+        const newDocRef = doc(collection(db, 'knowledge_documents'));
+        batch.set(newDocRef, {
+          fileName: document.fileName,
+          uploadedAt: serverTimestamp(),
+          filePath: filePath, 
+        });
       });
-
+      
+      await Promise.all(storageUploadPromises);
+      await batch.commit();
 
       return {
         success: true,
-        message: `PDF '${input.fileName}' uploaded and added to knowledge base.`,
+        message: `${input.documents.length} PDF(s) uploaded and added to knowledge base.`,
       };
     } catch (error) {
-      console.error("Error processing PDF:", error);
+      console.error("Error processing PDFs:", error);
       return {
         success: false,
-        message: `Failed to process PDF '${input.fileName}'.`,
+        message: `Failed to process PDFs.`,
       };
     }
   }
@@ -172,23 +183,33 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         let combinedContent = '';
 
         for (const docInfo of allDocs) {
-            const fileRef = ref(storage, docInfo.filePath);
-            const downloadUrl = await getDownloadURL(fileRef);
-            
-             const dataUri = await fetch(downloadUrl).then(res => res.blob()).then(blob => {
-                return new Promise((resolve, reject) => {
+            try {
+                const fileRef = ref(storage, docInfo.filePath);
+                const downloadUrl = await getDownloadURL(fileRef);
+                
+                const response = await fetch(downloadUrl);
+                if (!response.ok) {
+                    console.warn(`Could not fetch ${docInfo.fileName}, skipping. Status: ${response.status}`);
+                    continue; // Skip this file
+                }
+
+                const blob = await response.blob();
+
+                const dataUri = await new Promise<string>((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = e => resolve(e.target?.result);
+                    reader.onload = e => resolve(e.target?.result as string);
                     reader.onerror = e => reject(e);
                     reader.readAsDataURL(blob);
                 });
-            });
 
-            const textContent = await googleAI.extractText(
-              media(dataUri as string)
-            );
-            
-            combinedContent += `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
+                const textContent = await googleAI.extractText(
+                  media(dataUri)
+                );
+                
+                combinedContent += `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
+            } catch (fetchError) {
+                console.warn(`Error processing file ${docInfo.fileName}, skipping. Error:`, fetchError);
+            }
         }
         
         const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);

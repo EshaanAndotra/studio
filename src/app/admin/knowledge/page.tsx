@@ -65,43 +65,33 @@ export default function KnowledgeBasePage() {
 
         setIsLoading(true);
 
-        const uploadPromises = files.map(file => {
-            return new Promise<{ success: boolean; message: string; fileName: string }>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = async () => {
-                    try {
-                        const pdfDataUri = reader.result as string;
-                        const result = await adminUploadsPdfKnowledgeBase({
-                            pdfDataUri,
-                            fileName: file.name
-                        });
-                        if(result.success) {
-                            resolve({ ...result, fileName: file.name });
-                        } else {
-                            reject(new Error(result.message));
-                        }
-                    } catch (error) {
-                        reject(error);
-                    }
-                };
-                reader.onerror = (error) => {
-                    reject(error);
-                };
-            });
-        });
-
         try {
-            const results = await Promise.allSettled(uploadPromises);
-            const successfulUploads = results.filter(r => r.status === 'fulfilled').length;
-
-            toast({
-                title: 'Upload Complete',
-                description: `${successfulUploads} out of ${files.length} files uploaded successfully. The knowledge base is being updated.`,
+            const filePromises = files.map(file => {
+                return new Promise<{ pdfDataUri: string; fileName: string }>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = () => resolve({
+                        pdfDataUri: reader.result as string,
+                        fileName: file.name
+                    });
+                    reader.onerror = (error) => reject(error);
+                });
             });
-            setFiles([]);
-            fetchDocuments(); // Refresh the list of documents after upload
+            
+            const documentsToUpload = await Promise.all(filePromises);
 
+            const result = await adminUploadsPdfKnowledgeBase({ documents: documentsToUpload });
+
+            if (result.success) {
+                toast({
+                    title: 'Upload Complete',
+                    description: result.message,
+                });
+                setFiles([]);
+                fetchDocuments();
+            } else {
+                throw new Error(result.message);
+            }
         } catch (error) {
             toast({
                 variant: 'destructive',
@@ -178,7 +168,7 @@ export default function KnowledgeBasePage() {
                                 Uploading {files.length} file{files.length > 1 ? 's' : ''}...
                             </>
                         ) : (
-                        `Upload and Process ${files.length || ''} File${files.length > 1 ? 's' : ''}`.trim()
+                        `Upload and Process ${files.length || ''} File${files.length !== 1 ? 's' : ''}`.trim()
                         )}
                     </Button>
                 </CardContent>
