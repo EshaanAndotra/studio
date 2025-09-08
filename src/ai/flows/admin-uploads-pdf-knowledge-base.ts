@@ -78,43 +78,41 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      // 1. Extract text and prepare file uploads in parallel
-      const processingPromises = input.documents.map(async (document) => {
-        const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
-        
-        const filePath = `knowledge_base/${Date.now()}_${document.fileName}`;
-        const storageRef = ref(storage, filePath);
-        
-        // Return upload promise, metadata, and extracted text
-        return {
-          uploadPromise: uploadString(storageRef, document.pdfDataUri, 'data_url'),
-          metadata: {
+      // 1. Process all documents in parallel (text extraction and file upload)
+      const processingResults = await Promise.all(
+        input.documents.map(async (document) => {
+          const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
+          
+          const filePath = `knowledge_base/${Date.now()}_${document.fileName}`;
+          const storageRef = ref(storage, filePath);
+          await uploadString(storageRef, document.pdfDataUri, 'data_url');
+          
+          return {
             fileName: document.fileName,
-            uploadedAt: serverTimestamp(),
             filePath: filePath,
-          },
-          textContent: `\n\n--- Content from ${document.fileName} ---\n\n${textContent}`,
-        };
-      });
+            textContent: `\n\n--- Content from ${document.fileName} ---\n\n${textContent}`,
+          };
+        })
+      );
 
-      const processedDocs = await Promise.all(processingPromises);
-      
-      // 2. Execute all storage uploads
-      await Promise.all(processedDocs.map(p => p.uploadPromise));
-
-      // 3. Combine all text content
-      const combinedTextContent = processedDocs.map(p => p.textContent).join('');
-      
-      // 4. Create an atomic batch write for all Firestore operations
+      // 2. Prepare for batch Firestore write
       const batch = writeBatch(db);
-
-      // Add new document metadata to the batch
-      processedDocs.forEach(p => {
+      
+      // 3. Add new document metadata to the batch
+      processingResults.forEach(result => {
         const newDocRef = doc(collection(db, 'knowledge_documents'));
-        batch.set(newDocRef, p.metadata);
+        const metadata = {
+          fileName: result.fileName,
+          uploadedAt: serverTimestamp(),
+          filePath: result.filePath,
+        };
+        batch.set(newDocRef, metadata);
       });
 
-      // Add knowledge base update to the batch
+      // 4. Combine all text content
+      const combinedTextContent = processingResults.map(p => p.textContent).join('');
+
+      // 5. Update the main knowledge base document in the batch
       const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
       const knowledgeDoc = await getDoc(knowledgeDocRef);
 
@@ -131,7 +129,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
         });
       }
 
-      // 5. Commit the atomic batch write to Firestore
+      // 6. Commit the atomic batch write to Firestore
       await batch.commit();
 
       return {
@@ -147,6 +145,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
     }
   }
 );
+
 
 const deleteKnowledgeDocumentFlow = ai.defineFlow(
   {
