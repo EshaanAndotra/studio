@@ -5,10 +5,11 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
+  type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { AuthContext } from '@/components/auth-provider';
-import { MOCK_USERS, type User } from '@/lib/auth';
+import { type User } from '@/lib/auth';
 import { auth, db } from '@/lib/firebase';
 
 export type UseAuthReturn = {
@@ -30,13 +31,16 @@ async function getUserProfile(uid: string): Promise<User | null> {
   const userDocRef = doc(db, 'users', uid);
   const userDoc = await getDoc(userDocRef);
   if (userDoc.exists()) {
-    const userData = userDoc.data() as User;
+    const userData = userDoc.data();
     // Firestore timestamp needs to be converted
-    if (userData.createdAt && typeof userData.createdAt !== 'string') {
-        // @ts-ignore
-        userData.createdAt = userData.createdAt.toDate().toISOString();
-    }
-    return userData;
+    return {
+      id: userDoc.id,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      loginCount: userData.loginCount,
+      createdAt: userData.createdAt.toDate().toISOString(),
+    };
   }
   return null;
 }
@@ -72,48 +76,41 @@ export function useAuthHook(): UseAuthReturn {
       let userProfile = await getUserProfile(firebaseUser.uid);
 
       if (!userProfile) {
-        // If profile doesn't exist, this might be a first-time login
-        // for a pre-existing auth user. Let's create a profile.
-        const mockUser = MOCK_USERS.find(u => u.email === email);
+        // If profile doesn't exist, create it in Firestore.
         const userDocRef = doc(db, 'users', firebaseUser.uid);
-
-        if (mockUser) {
-            const { password, ...userToCreate } = mockUser;
-            const newProfile: User = {
-                ...userToCreate,
-                id: firebaseUser.uid,
-                createdAt: new Date(userToCreate.createdAt).toISOString()
-            };
-            await setDoc(userDocRef, { ...newProfile, createdAt: new Date(newProfile.createdAt) });
-            userProfile = newProfile;
-        } else {
-             const newProfile: User = {
-                id: firebaseUser.uid,
-                name: firebaseUser.displayName || email.split('@')[0],
-                email: firebaseUser.email!,
-                role: 'user', // default role
-                loginCount: 1,
-                createdAt: new Date().toISOString(),
-            };
-            await setDoc(userDocRef, { ...newProfile, createdAt: serverTimestamp() });
-            userProfile = newProfile;
-        }
+        const newProfile: User = {
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName || email.split('@')[0],
+            email: firebaseUser.email!,
+            role: email === 'admin@mhealth.com' ? 'admin' : 'user', // Assign role based on email for seeding
+            loginCount: 1,
+            createdAt: new Date().toISOString(),
+        };
+        // Use serverTimestamp() for Firestore, but keep ISO string for the object
+        await setDoc(userDocRef, { ...newProfile, createdAt: serverTimestamp() });
+        userProfile = newProfile;
+        
       } else {
         // Profile exists, so just update login count
         const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const newLoginCount = (userProfile.loginCount || 0) + 1;
         await updateDoc(userDocRef, {
-            loginCount: (userProfile.loginCount || 0) + 1
+            loginCount: newLoginCount,
         });
-        userProfile.loginCount = (userProfile.loginCount || 0) + 1;
+        userProfile.loginCount = newLoginCount;
       }
 
       setUser(userProfile);
       return userProfile;
 
     } catch (error: any) {
-        if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
             throw new Error('Invalid email or password.');
         }
+        if (error.code === 'auth/too-many-requests') {
+            throw new Error('Too many login attempts. Please try again later.');
+        }
+        // Rethrow other errors
         throw error;
     }
     finally {

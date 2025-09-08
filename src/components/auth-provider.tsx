@@ -8,5 +8,9 @@ export const AuthContext = createContext<UseAuthReturn | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const auth = useAuthHook();
 
-  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={auth}>
+      {children}
+    </AuthContext.Provider>
+  );
 }

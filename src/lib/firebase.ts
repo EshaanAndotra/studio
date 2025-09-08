@@ -9,7 +9,7 @@ const firebaseConfig = {
   apiKey: 'AIzaSyBOg1Bfwx_Gjbx7DO4i54KjAJKKq-dZ5lg',
   authDomain: 'm-health-jxug7.firebaseapp.com',
   messagingSenderId: '284239863057',
-  measurementId: ''
+  measurementId: 'G-XXXXXXXXXX'
 };
 
 // Initialize Firebase
