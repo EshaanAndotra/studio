@@ -4,9 +4,20 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { adminUploadsPdfKnowledgeBase, getKnowledgeDocuments, type KnowledgeDocument } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
-import { UploadCloud, Loader2, FileText, X, Files } from "lucide-react";
+import { adminUploadsPdfKnowledgeBase, getKnowledgeDocuments, deleteKnowledgeDocument, type KnowledgeDocument } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
+import { UploadCloud, Loader2, FileText, X, Files, Trash2 } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function KnowledgeBasePage() {
     const [files, setFiles] = useState<File[]>([]);
@@ -86,7 +97,7 @@ export default function KnowledgeBasePage() {
 
             toast({
                 title: 'Upload Complete',
-                description: `${successfulUploads} out of ${files.length} files uploaded successfully.`,
+                description: `${successfulUploads} out of ${files.length} files uploaded successfully. The knowledge base is being updated.`,
             });
             setFiles([]);
             fetchDocuments(); // Refresh the list of documents after upload
@@ -102,12 +113,37 @@ export default function KnowledgeBasePage() {
         }
     };
 
+    const handleDelete = async (docId: string, docName: string) => {
+        setIsLoading(true);
+        try {
+            const result = await deleteKnowledgeDocument(docId);
+            if (result.success) {
+                toast({
+                    title: 'Document Deleted',
+                    description: `'${docName}' has been removed and the knowledge base is being updated.`,
+                });
+                fetchDocuments();
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+            toast({
+                variant: 'destructive',
+                title: 'Deletion Failed',
+                description: (error as Error).message,
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+
     return (
         <div className="grid gap-6 md:grid-cols-2">
             <Card>
                 <CardHeader>
                     <CardTitle>Upload Knowledge</CardTitle>
-                    <CardDescription>Upload PDF documents to train the chatbot. You can select multiple files at once.</CardDescription>
+                    <CardDescription>Upload PDF documents to train the chatbot. The knowledge base will be rebuilt after each change.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex flex-col items-center justify-center w-full">
@@ -169,13 +205,38 @@ export default function KnowledgeBasePage() {
                             <div className="space-y-3">
                                 {documents.map(doc => (
                                     <div key={doc.id} className="flex items-center justify-between p-3 rounded-lg bg-accent/50">
-                                        <div className="flex items-center gap-3">
-                                            <FileText className="h-5 w-5 text-primary" />
-                                            <span className="text-sm font-medium text-foreground">{doc.fileName}</span>
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <FileText className="h-5 w-5 text-primary shrink-0" />
+                                            <div className="flex-grow overflow-hidden">
+                                                <p className="text-sm font-medium text-foreground truncate" title={doc.fileName}>{doc.fileName}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Added: {doc.uploadedAt ? new Date(doc.uploadedAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <span className="text-xs text-muted-foreground">
-                                            {doc.uploadedAt ? new Date(doc.uploadedAt.seconds * 1000).toLocaleDateString() : 'N/A'}
-                                        </span>
+                                        
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={isLoading}>
+                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This will permanently delete the document <span className="font-semibold text-foreground">"{doc.fileName}"</span> and rebuild the knowledge base. This action cannot be undone.
+                                                </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => handleDelete(doc.id, doc.fileName)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                                                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                                    Delete
+                                                </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
                                     </div>
                                 ))}
                             </div>
