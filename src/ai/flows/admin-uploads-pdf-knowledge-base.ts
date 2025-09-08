@@ -15,7 +15,7 @@ import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, de
 import { db, app } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 import { media } from 'genkit';
-import { getStorage, ref, uploadString, getDownloadURL, deleteObject, getBytes } from "firebase/storage";
+import { getStorage, ref, uploadString, getDownloadURL, deleteObject, getBytes, getStream } from "firebase/storage";
 
 
 export type KnowledgeDocument = {
@@ -183,6 +183,20 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
   }
 );
 
+// Helper function to read a stream into a buffer
+async function streamToBuffer(readableStream: NodeJS.ReadableStream): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    readableStream.on('data', (data) => {
+      chunks.push(data instanceof Buffer ? data : Buffer.from(data));
+    });
+    readableStream.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    readableStream.on('error', reject);
+  });
+}
+
 const rebuildKnowledgeBaseFlow = ai.defineFlow({
     name: 'rebuildKnowledgeBaseFlow',
     inputSchema: z.undefined(),
@@ -196,8 +210,9 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
             try {
                 const fileRef = ref(storage, docInfo.filePath);
 
-                // Download the file contents as a buffer
-                const fileBuffer = await getBytes(fileRef);
+                // Download the file contents as a stream and convert to buffer
+                const stream = getStream(fileRef);
+                const fileBuffer = await streamToBuffer(stream);
                 
                 // Convert buffer to a base64 data URI
                 const base64 = fileBuffer.toString('base64');
