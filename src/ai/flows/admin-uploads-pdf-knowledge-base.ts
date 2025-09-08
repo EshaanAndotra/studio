@@ -187,20 +187,16 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 const fileRef = ref(storage, docInfo.filePath);
                 const downloadUrl = await getDownloadURL(fileRef);
                 
+                // Fetch in a way that works in Node.js on the server
                 const response = await fetch(downloadUrl);
                 if (!response.ok) {
                     console.warn(`Could not fetch ${docInfo.fileName}, skipping. Status: ${response.status}`);
                     continue; // Skip this file
                 }
-
-                const blob = await response.blob();
-
-                const dataUri = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = e => resolve(e.target?.result as string);
-                    reader.onerror = e => reject(e);
-                    reader.readAsDataURL(blob);
-                });
+                const buffer = await response.arrayBuffer();
+                const mimeType = response.headers.get('content-type') || 'application/pdf';
+                const base64 = Buffer.from(buffer).toString('base64');
+                const dataUri = `data:${mimeType};base64,${base64}`;
 
                 const textContent = await googleAI.extractText(
                   media(dataUri)
