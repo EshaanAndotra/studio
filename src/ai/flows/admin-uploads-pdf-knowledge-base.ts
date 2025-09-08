@@ -187,11 +187,10 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 const fileRef = ref(storage, docInfo.filePath);
                 const downloadUrl = await getDownloadURL(fileRef);
                 
-                // Fetch in a way that works in Node.js on the server
                 const response = await fetch(downloadUrl);
                 if (!response.ok) {
                     console.warn(`Could not fetch ${docInfo.fileName}, skipping. Status: ${response.status}`);
-                    continue; // Skip this file
+                    continue;
                 }
                 const buffer = await response.arrayBuffer();
                 const mimeType = response.headers.get('content-type') || 'application/pdf';
