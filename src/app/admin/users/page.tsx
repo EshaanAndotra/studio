@@ -15,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { MOCK_USERS, type User } from '@/lib/auth';
+import { type User } from '@/lib/auth';
 import { Badge } from '@/components/ui/badge';
 import {
     DropdownMenu,
@@ -25,11 +25,50 @@ import {
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useEffect, useState } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function UsersPage() {
-  const users = MOCK_USERS;
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const usersCollection = collection(db, 'users');
+        const usersSnapshot = await getDocs(usersCollection);
+        const usersList = usersSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                name: data.name,
+                email: data.email,
+                role: data.role,
+                loginCount: data.loginCount,
+                createdAt: data.createdAt?.toDate().toISOString() ?? new Date().toISOString(),
+            }
+        }) as User[];
+        setUsers(usersList);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
+  if (loading) {
+    return (
+        <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+    )
+  }
 
   return (
     <Card>
@@ -64,7 +103,7 @@ export default function UsersPage() {
                     {user.role}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-center">{user.loginCount}</TableCell>
+                <TableCell className="text-center">{user.loginCount || 0}</TableCell>
                 <TableCell>
                   {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
                 </TableCell>
