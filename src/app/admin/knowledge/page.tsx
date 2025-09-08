@@ -1,12 +1,10 @@
 'use client';
 import { useState, type ChangeEvent, useEffect } from 'react';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { adminUploadsPdfKnowledgeBase, type KnowledgeDocument } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
+import { adminUploadsPdfKnowledgeBase, getKnowledgeDocuments, type KnowledgeDocument } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
 import { UploadCloud, Loader2, FileText, X, Files } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -17,24 +15,26 @@ export default function KnowledgeBasePage() {
     const [isFetchingDocs, setIsFetchingDocs] = useState(true);
     const { toast } = useToast();
 
-    useEffect(() => {
-        const q = query(collection(db, 'knowledge_documents'), orderBy('uploadedAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const docs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KnowledgeDocument));
+    const fetchDocuments = async () => {
+        setIsFetchingDocs(true);
+        try {
+            const docs = await getKnowledgeDocuments();
             setDocuments(docs);
-            setIsFetchingDocs(false);
-        }, (error) => {
+        } catch (error) {
             console.error("Error fetching knowledge documents:", error);
             toast({
                 variant: 'destructive',
                 title: 'Error',
                 description: 'Could not fetch knowledge documents.',
             });
+        } finally {
             setIsFetchingDocs(false);
-        });
+        }
+    };
 
-        return () => unsubscribe();
-    }, [toast]);
+    useEffect(() => {
+        fetchDocuments();
+    }, []);
 
     const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
@@ -89,6 +89,7 @@ export default function KnowledgeBasePage() {
                 description: `${successfulUploads} out of ${files.length} files uploaded successfully.`,
             });
             setFiles([]);
+            fetchDocuments(); // Refresh the list of documents after upload
 
         } catch (error) {
             toast({

@@ -5,11 +5,12 @@
  * - adminUploadsPdfKnowledgeBase - A function that handles the PDF upload and knowledge base creation process.
  * - AdminUploadsPdfKnowledgeBaseInput - The input type for the adminUploadsPdfKnowledgeBase function.
  * - AdminUploadsPdfKnowledgeBaseOutput - The return type for the adminUploadsPdfKnowledgeBase function.
+ * - getKnowledgeDocuments - A function to retrieve all knowledge documents.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 
@@ -39,6 +40,19 @@ export type AdminUploadsPdfKnowledgeBaseOutput = z.infer<typeof AdminUploadsPdfK
 export async function adminUploadsPdfKnowledgeBase(input: AdminUploadsPdfKnowledgeBaseInput): Promise<AdminUploadsPdfKnowledgeBaseOutput> {
   return adminUploadsPdfKnowledgeBaseFlow(input);
 }
+
+// New function to securely fetch documents from the server
+export async function getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
+  try {
+    const q = query(collection(db, 'knowledge_documents'), orderBy('uploadedAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KnowledgeDocument));
+  } catch (error) {
+    console.error("Error fetching knowledge documents:", error);
+    return [];
+  }
+}
+
 
 const KNOWLEDGE_COLLECTION = 'knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
