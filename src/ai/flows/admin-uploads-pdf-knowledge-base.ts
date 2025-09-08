@@ -11,7 +11,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { extractText } from 'genkit/media';
+import { extractText } from '@genkit-ai/googleai';
 
 
 export type KnowledgeDocument = {
