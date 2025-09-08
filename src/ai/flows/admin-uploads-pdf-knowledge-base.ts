@@ -16,6 +16,7 @@ import { db, app } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 import { media } from 'genkit';
 import { getStorage, ref, uploadString, getDownloadURL, deleteObject, getBytes, getStream } from "firebase/storage";
+import { v4 as uuidv4 } from 'uuid';
 
 
 export type KnowledgeDocument = {
@@ -78,15 +79,22 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      // 1. Process all documents in parallel (text extraction and file upload)
+      // 1. Prepare documents with unique IDs first
+      const documentsWithIds = input.documents.map(doc => ({
+        ...doc,
+        uniqueId: uuidv4(),
+      }));
+
+      // 2. Process all documents in parallel (upload and text extraction)
       const processingResults = await Promise.all(
-        input.documents.map(async (document) => {
-          const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
-          
-          const filePath = `knowledge_base/${Date.now()}_${document.fileName}`;
+        documentsWithIds.map(async (document) => {
+          const filePath = `knowledge_base/${document.uniqueId}_${document.fileName}`;
           const storageRef = ref(storage, filePath);
+          
           await uploadString(storageRef, document.pdfDataUri, 'data_url');
           
+          const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
+
           return {
             fileName: document.fileName,
             filePath: filePath,
@@ -95,10 +103,13 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
         })
       );
 
-      // 2. Prepare for batch Firestore write
+      // 3. Combine all text content
+      const combinedTextContent = processingResults.map(p => p.textContent).join('');
+
+      // 4. Perform a single atomic batch write to Firestore
       const batch = writeBatch(db);
-      
-      // 3. Add new document metadata to the batch
+
+      // 4a. Add new document metadata to the batch
       processingResults.forEach(result => {
         const newDocRef = doc(collection(db, 'knowledge_documents'));
         const metadata = {
@@ -108,17 +119,15 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
         };
         batch.set(newDocRef, metadata);
       });
-
-      // 4. Combine all text content
-      const combinedTextContent = processingResults.map(p => p.textContent).join('');
-
-      // 5. Update the main knowledge base document in the batch
+      
+      // 4b. Update the main knowledge base document atomically in the batch
       const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
-      const knowledgeDoc = await getDoc(knowledgeDocRef);
+      const knowledgeDocSnap = await getDoc(knowledgeDocRef);
 
-      if (knowledgeDoc.exists()) {
+      if (knowledgeDocSnap.exists()) {
+        const existingContent = knowledgeDocSnap.data().content || '';
         batch.update(knowledgeDocRef, {
-          content: (knowledgeDoc.data().content || '') + combinedTextContent,
+          content: existingContent + combinedTextContent,
           lastUpdatedAt: serverTimestamp(),
         });
       } else {
@@ -128,8 +137,8 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
           lastUpdatedAt: serverTimestamp(),
         });
       }
-
-      // 6. Commit the atomic batch write to Firestore
+      
+      // 5. Commit the batch
       await batch.commit();
 
       return {
@@ -140,7 +149,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
       console.error("Error processing PDFs:", error);
       return {
         success: false,
-        message: `Failed to process PDFs.`,
+        message: `Failed to process PDFs. ${ (error as Error).message }`,
       };
     }
   }
@@ -205,27 +214,26 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         const allDocs = await getKnowledgeDocuments();
         let combinedContent = '';
 
-        for (const docInfo of allDocs) {
+        const textExtractionPromises = allDocs.map(async (docInfo) => {
             try {
                 const fileRef = ref(storage, docInfo.filePath);
-
-                // Download the file contents as a stream and convert to buffer
-                const stream = getStream(fileRef);
-                const fileBuffer = await streamToBuffer(stream);
+                const fileBuffer = await getBytes(fileRef);
                 
-                // Convert buffer to a base64 data URI
-                const base64 = fileBuffer.toString('base64');
-                const dataUri = `data:application/pdf;base64,${base64}`;
+                const dataUri = `data:application/pdf;base64,${fileBuffer.toString('base64')}`;
 
                 const textContent = await googleAI.extractText(
                   media({uri: dataUri})
                 );
                 
-                combinedContent += `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
+                return `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
             } catch (fetchError) {
                 console.warn(`Error processing file ${docInfo.fileName}, skipping. Error:`, fetchError);
+                return ''; // Return empty string for failed files
             }
-        }
+        });
+
+        const allTextContents = await Promise.all(textExtractionPromises);
+        combinedContent = allTextContents.join('');
         
         const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
         
