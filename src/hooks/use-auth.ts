@@ -48,6 +48,24 @@ async function getUserProfile(uid: string): Promise<User | null> {
   return null;
 }
 
+const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role: 'user' | 'admin'): Promise<User> => {
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const newUserProfile: Omit<User, 'createdAt'> & {createdAt: any, lastLogin: any} = {
+          id: firebaseUser.uid,
+          name: name,
+          email: firebaseUser.email!,
+          role: role,
+          loginCount: 1,
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
+      };
+      
+      await setDoc(userDocRef, newUserProfile);
+      
+      const createdProfile = await getUserProfile(firebaseUser.uid);
+      return createdProfile!;
+  }
+
 export function useAuthHook(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,13 +100,12 @@ export function useAuthHook(): UseAuthReturn {
       let userProfile: User;
 
       if (userDoc.exists()) {
-        // Profile exists, so update login count
         await updateDoc(userDocRef, {
             loginCount: increment(1),
+            lastLogin: serverTimestamp()
         });
         userProfile = (await getUserProfile(firebaseUser.uid))!;
       } else {
-        // This case is for users created in Firebase console but not in firestore
          userProfile = await createUserProfile(firebaseUser, firebaseUser.displayName || email.split('@')[0], 'user');
       }
 
@@ -136,24 +153,6 @@ export function useAuthHook(): UseAuthReturn {
     } finally {
       setLoading(false);
     }
-  }
-
-  const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role: 'user' | 'admin'): Promise<User> => {
-      const userDocRef = doc(db, 'users', firebaseUser.uid);
-      const newUserProfile: Omit<User, 'createdAt'> & {createdAt: any, lastLogin: any} = {
-          id: firebaseUser.uid,
-          name: name,
-          email: firebaseUser.email!,
-          role: role,
-          loginCount: 1,
-          createdAt: serverTimestamp(),
-          lastLogin: serverTimestamp(),
-      };
-      
-      await setDoc(userDocRef, newUserProfile);
-      
-      const createdProfile = await getUserProfile(firebaseUser.uid);
-      return createdProfile!;
   }
 
   const logout = async () => {
