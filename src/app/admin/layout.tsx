@@ -119,7 +119,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                         <Avatar className="h-8 w-8">
                             <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
                                 {user.name.charAt(0).toUpperCase()}
-                            </A>
+                            </AvatarFallback>
                         </Avatar>
                     </Button>
                     </DropdownMenuTrigger>
