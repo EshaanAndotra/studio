@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useContext } from 'react';
 import {
-  getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
-  type User as FirebaseAuthUser,
 } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { AuthContext } from '@/components/auth-provider';
 import { MOCK_USERS, type User } from '@/lib/auth';
 import { auth, db } from '@/lib/firebase';
@@ -32,16 +30,14 @@ async function getUserProfile(uid: string): Promise<User | null> {
   const userDocRef = doc(db, 'users', uid);
   const userDoc = await getDoc(userDocRef);
   if (userDoc.exists()) {
-    return userDoc.data() as User;
+    const userData = userDoc.data() as User;
+    // Firestore timestamp needs to be converted
+    if (userData.createdAt && typeof userData.createdAt !== 'string') {
+        // @ts-ignore
+        userData.createdAt = userData.createdAt.toDate().toISOString();
+    }
+    return userData;
   }
-  // This part is for seeding the mock user data into Firestore
-  const mockUser = MOCK_USERS.find((u) => u.id === uid);
-  if (mockUser) {
-    const { password, ...userToCreate } = mockUser;
-    await setDoc(userDocRef, { ...userToCreate, createdAt: serverTimestamp() });
-    return mockUser as User;
-  }
-
   return null;
 }
 
@@ -72,25 +68,55 @@ export function useAuthHook(): UseAuthReturn {
         password
       );
       const firebaseUser = userCredential.user;
+      
+      let userProfile = await getUserProfile(firebaseUser.uid);
 
-      // Seed mock data for initial login
-      const mockUser = MOCK_USERS.find(u => u.email === email);
-      if(mockUser && mockUser.id !== firebaseUser.uid) {
-        // This is a bit of a hack to link mock user ID to firebase UID
-        // In a real app, user creation would handle this.
-         const userDocRef = doc(db, 'users', firebaseUser.uid);
-         const { password, ...userToCreate } = mockUser;
-         await setDoc(userDocRef, { ...userToCreate, id: firebaseUser.uid, createdAt: new Date(userToCreate.createdAt) });
-      }
-
-
-      const userProfile = await getUserProfile(firebaseUser.uid);
       if (!userProfile) {
-        throw new Error('User profile not found.');
+        // If profile doesn't exist, this might be a first-time login
+        // for a pre-existing auth user. Let's create a profile.
+        const mockUser = MOCK_USERS.find(u => u.email === email);
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+
+        if (mockUser) {
+            const { password, ...userToCreate } = mockUser;
+            const newProfile: User = {
+                ...userToCreate,
+                id: firebaseUser.uid,
+                createdAt: new Date(userToCreate.createdAt).toISOString()
+            };
+            await setDoc(userDocRef, { ...newProfile, createdAt: new Date(newProfile.createdAt) });
+            userProfile = newProfile;
+        } else {
+             const newProfile: User = {
+                id: firebaseUser.uid,
+                name: firebaseUser.displayName || email.split('@')[0],
+                email: firebaseUser.email!,
+                role: 'user', // default role
+                loginCount: 1,
+                createdAt: new Date().toISOString(),
+            };
+            await setDoc(userDocRef, { ...newProfile, createdAt: serverTimestamp() });
+            userProfile = newProfile;
+        }
+      } else {
+        // Profile exists, so just update login count
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        await updateDoc(userDocRef, {
+            loginCount: (userProfile.loginCount || 0) + 1
+        });
+        userProfile.loginCount = (userProfile.loginCount || 0) + 1;
       }
+
       setUser(userProfile);
       return userProfile;
-    } finally {
+
+    } catch (error: any) {
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
+            throw new Error('Invalid email or password.');
+        }
+        throw error;
+    }
+    finally {
       setLoading(false);
     }
   };
