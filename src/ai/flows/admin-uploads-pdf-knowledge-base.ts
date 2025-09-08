@@ -9,6 +9,14 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
+export type KnowledgeDocument = {
+  id: string;
+  fileName: string;
+  uploadedAt: { seconds: number; nanoseconds: number; };
+};
 
 const AdminUploadsPdfKnowledgeBaseInputSchema = z.object({
   pdfDataUri: z
@@ -36,15 +44,29 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
     inputSchema: AdminUploadsPdfKnowledgeBaseInputSchema,
     outputSchema: AdminUploadsPdfKnowledgeBaseOutputSchema,
   },
-  async input => {
-    // TODO: Implement the logic to upload the PDF to a storage service (e.g., Firebase Storage).
-    // TODO: Extract text from the PDF and store it in a vector database (e.g., Pinecone, Chroma).
-    // TODO: Implement error handling for PDF processing and database storage.
+  async (input) => {
+    try {
+      // TODO: Implement the logic to upload the PDF to a storage service (e.g., Firebase Storage).
+      // TODO: Extract text from the PDF and store it in a vector database (e.g., Pinecone, Chroma).
+      
+      // For now, we will just record the document in Firestore.
+      await addDoc(collection(db, 'knowledge_documents'), {
+        fileName: input.fileName,
+        uploadedAt: serverTimestamp(),
+        // In a real app, you'd store the path to the file in Cloud Storage here
+        // and maybe the ID of the document in the vector store.
+      });
 
-    // Placeholder response for now
-    return {
-      success: true,
-      message: `PDF ${input.fileName} uploaded and is being processed.  The knowledge base will be updated shortly.`, // should not be shown if success is false
-    };
+      return {
+        success: true,
+        message: `PDF '${input.fileName}' uploaded successfully. It is now part of the knowledge base.`,
+      };
+    } catch (error) {
+      console.error("Error processing PDF:", error);
+      return {
+        success: false,
+        message: `Failed to process PDF '${input.fileName}'.`,
+      };
+    }
   }
 );

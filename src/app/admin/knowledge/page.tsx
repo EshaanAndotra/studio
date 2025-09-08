@@ -1,115 +1,187 @@
 'use client';
-import { useState, type ChangeEvent } from 'react';
+import { useState, type ChangeEvent, useEffect } from 'react';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { adminUploadsPdfKnowledgeBase } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
-import { UploadCloud, Loader2, FileText, X } from "lucide-react";
+import { adminUploadsPdfKnowledgeBase, type KnowledgeDocument } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
+import { UploadCloud, Loader2, FileText, X, Files } from "lucide-react";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function KnowledgeBasePage() {
-    const [file, setFile] = useState<File | null>(null);
+    const [files, setFiles] = useState<File[]>([]);
+    const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isFetchingDocs, setIsFetchingDocs] = useState(true);
     const { toast } = useToast();
+
+    useEffect(() => {
+        const q = query(collection(db, 'knowledge_documents'), orderBy('uploadedAt', 'desc'));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const docs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KnowledgeDocument));
+            setDocuments(docs);
+            setIsFetchingDocs(false);
+        }, (error) => {
+            console.error("Error fetching knowledge documents:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: 'Could not fetch knowledge documents.',
+            });
+            setIsFetchingDocs(false);
+        });
+
+        return () => unsubscribe();
+    }, [toast]);
 
     const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
-            setFile(e.target.files[0]);
+            setFiles(Array.from(e.target.files));
         }
     };
 
     const handleUpload = async () => {
-        if (!file) {
+        if (files.length === 0) {
             toast({
                 variant: 'destructive',
-                title: 'No file selected',
-                description: 'Please choose a PDF file to upload.',
+                title: 'No files selected',
+                description: 'Please choose one or more PDF files to upload.',
             });
             return;
         }
 
         setIsLoading(true);
 
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = async () => {
-            try {
-                const pdfDataUri = reader.result as string;
-                const result = await adminUploadsPdfKnowledgeBase({
-                    pdfDataUri,
-                    fileName: file.name
-                });
-
-                if (result.success) {
-                    toast({
-                        title: 'Upload Successful',
-                        description: result.message,
-                    });
-                    setFile(null);
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                toast({
-                    variant: 'destructive',
-                    title: 'Upload Failed',
-                    description: (error as Error).message || 'An unknown error occurred.',
-                });
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        reader.onerror = () => {
-             toast({
-                variant: 'destructive',
-                title: 'File Read Error',
-                description: 'Could not read the selected file.',
+        const uploadPromises = files.map(file => {
+            return new Promise<{ success: boolean; message: string; fileName: string }>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = async () => {
+                    try {
+                        const pdfDataUri = reader.result as string;
+                        const result = await adminUploadsPdfKnowledgeBase({
+                            pdfDataUri,
+                            fileName: file.name
+                        });
+                        if(result.success) {
+                            resolve({ ...result, fileName: file.name });
+                        } else {
+                            reject(new Error(result.message));
+                        }
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = (error) => {
+                    reject(error);
+                };
             });
+        });
+
+        try {
+            const results = await Promise.allSettled(uploadPromises);
+            const successfulUploads = results.filter(r => r.status === 'fulfilled').length;
+
+            toast({
+                title: 'Upload Complete',
+                description: `${successfulUploads} out of ${files.length} files uploaded successfully.`,
+            });
+            setFiles([]);
+
+        } catch (error) {
+            toast({
+                variant: 'destructive',
+                title: 'Upload Failed',
+                description: (error as Error).message || 'An unknown error occurred during upload.',
+            });
+        } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>Knowledge Base Management</CardTitle>
-                <CardDescription>Upload PDF documents to train and update the chatbot&apos;s knowledge base.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-                <div className="flex flex-col items-center justify-center w-full">
-                    <label htmlFor="pdf-upload" className="relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-accent/50 transition-colors">
-                        {file ? (
-                             <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                <FileText className="w-10 h-10 mb-3 text-primary" />
-                                <p className="mb-2 text-sm text-foreground"><span className="font-semibold">{file.name}</span></p>
-                                <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(2)} KB</p>
-                                <Button variant="ghost" size="icon" className="absolute top-2 right-2 rounded-full h-7 w-7 z-10" onClick={(e) => { e.preventDefault(); setFile(null); }}>
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
+        <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Upload Knowledge</CardTitle>
+                    <CardDescription>Upload PDF documents to train the chatbot. You can select multiple files at once.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    <div className="flex flex-col items-center justify-center w-full">
+                        <label htmlFor="pdf-upload" className="relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-accent/50 transition-colors">
+                            {files.length > 0 ? (
+                                <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
+                                    <Files className="w-10 h-10 mb-3 text-primary" />
+                                    <p className="mb-2 text-sm text-foreground"><span className="font-semibold">{files.length} file{files.length > 1 ? 's' : ''} selected</span></p>
+                                    <ul className="text-xs text-muted-foreground list-disc list-inside max-h-24 overflow-y-auto">
+                                        {files.map(f => <li key={f.name} className="truncate">{f.name}</li>)}
+                                    </ul>
+                                    <Button variant="ghost" size="icon" className="absolute top-2 right-2 rounded-full h-7 w-7 z-10" onClick={(e) => { e.preventDefault(); setFiles([]); }}>
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                    <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
+                                    <p className="mb-2 text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                                    <p className="text-xs text-muted-foreground">PDFs (MAX. 5MB each)</p>
+                                </div>
+                            )}
+                        
+                            <Input id="pdf-upload" type="file" className="hidden" onChange={handleFileChange} accept=".pdf" disabled={isLoading} multiple />
+                        </label>
+                    </div>
+                    
+                    <Button onClick={handleUpload} disabled={files.length === 0 || isLoading} className="w-full">
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Uploading {files.length} file{files.length > 1 ? 's' : ''}...
+                            </>
                         ) : (
-                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                <UploadCloud className="w-10 h-10 mb-3 text-muted-foreground" />
-                                <p className="mb-2 text-sm text-muted-foreground"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                                <p className="text-xs text-muted-foreground">PDF (MAX. 5MB)</p>
-                            </div>
+                        `Upload and Process ${files.length || ''} File${files.length > 1 ? 's' : ''}`.trim()
                         )}
-                       
-                        <Input id="pdf-upload" type="file" className="hidden" onChange={handleFileChange} accept=".pdf" disabled={isLoading} />
-                    </label>
-                </div>
-                
-                <Button onClick={handleUpload} disabled={!file || isLoading} className="w-full">
-                    {isLoading ? (
-                        <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Uploading...
-                        </>
-                    ) : (
-                       'Upload and Process File'
-                    )}
-                </Button>
-            </CardContent>
-        </Card>
+                    </Button>
+                </CardContent>
+            </Card>
+
+            <Card>
+                 <CardHeader>
+                    <CardTitle>Current Knowledge Base</CardTitle>
+                    <CardDescription>The following documents are currently part of the chatbot's knowledge.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ScrollArea className="h-[24.5rem] pr-4">
+                         {isFetchingDocs ? (
+                            <div className="flex items-center justify-center h-full">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                            </div>
+                         ) : documents.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground p-8 border-2 border-dashed rounded-lg">
+                                <FileText className="w-12 h-12 mb-4" />
+                                <h3 className="font-semibold text-lg">No Documents Found</h3>
+                                <p className="text-sm">Upload a PDF to get started.</p>
+                            </div>
+                         ) : (
+                            <div className="space-y-3">
+                                {documents.map(doc => (
+                                    <div key={doc.id} className="flex items-center justify-between p-3 rounded-lg bg-accent/50">
+                                        <div className="flex items-center gap-3">
+                                            <FileText className="h-5 w-5 text-primary" />
+                                            <span className="text-sm font-medium text-foreground">{doc.fileName}</span>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">
+                                            {doc.uploadedAt ? new Date(doc.uploadedAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                         )}
+                    </ScrollArea>
+                </CardContent>
+            </Card>
+        </div>
     );
 }
