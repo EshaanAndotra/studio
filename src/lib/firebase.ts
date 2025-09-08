@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 
 const firebaseConfig = {
   projectId: 'm-health-jxug7',
@@ -15,6 +15,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
-const db = getFirestore(app);
+
+// Initialize Firestore with offline persistence.
+// Using memoryLocalCache to avoid persistence conflicts in some environments.
+const db = initializeFirestore(app, {
+  localCache: memoryLocalCache(),
+});
+
 
 export { app, auth, db };
