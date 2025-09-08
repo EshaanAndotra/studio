@@ -9,8 +9,10 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, FieldValue } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { extractText } from 'genkit/media';
+
 
 export type KnowledgeDocument = {
   id: string;
@@ -38,6 +40,9 @@ export async function adminUploadsPdfKnowledgeBase(input: AdminUploadsPdfKnowled
   return adminUploadsPdfKnowledgeBaseFlow(input);
 }
 
+const KNOWLEDGE_COLLECTION = 'knowledge_base';
+const KNOWLEDGE_DOCUMENT_ID = 'main_document';
+
 const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   {
     name: 'adminUploadsPdfKnowledgeBaseFlow',
@@ -46,20 +51,43 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      // TODO: Implement the logic to upload the PDF to a storage service (e.g., Firebase Storage).
-      // TODO: Extract text from the PDF and store it in a vector database (e.g., Pinecone, Chroma).
+      const mediaPart = {
+          data: {
+              url: input.pdfDataUri
+          }
+      };
       
-      // For now, we will just record the document in Firestore.
+      const textContent = await extractText(mediaPart);
+
+      // Add document metadata to the 'knowledge_documents' collection
       await addDoc(collection(db, 'knowledge_documents'), {
         fileName: input.fileName,
         uploadedAt: serverTimestamp(),
-        // In a real app, you'd store the path to the file in Cloud Storage here
-        // and maybe the ID of the document in the vector store.
       });
+      
+      const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
+      const knowledgeDoc = await getDoc(knowledgeDocRef);
+
+      const newContent = `\n\n--- Content from ${input.fileName} ---\n\n${textContent}`;
+
+      if (knowledgeDoc.exists()) {
+        // Append content if document exists
+        await updateDoc(knowledgeDocRef, {
+            content: (knowledgeDoc.data().content || '') + newContent,
+            lastUpdatedAt: serverTimestamp(),
+        });
+      } else {
+        // Create document if it doesn't exist
+        await setDoc(knowledgeDocRef, {
+            content: newContent,
+            createdAt: serverTimestamp(),
+            lastUpdatedAt: serverTimestamp(),
+        });
+      }
 
       return {
         success: true,
-        message: `PDF '${input.fileName}' uploaded successfully. It is now part of the knowledge base.`,
+        message: `PDF '${input.fileName}' uploaded and processed successfully.`,
       };
     } catch (error) {
       console.error("Error processing PDF:", error);

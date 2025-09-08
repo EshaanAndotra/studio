@@ -9,10 +9,14 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
+const KNOWLEDGE_COLLECTION = 'knowledge_base';
+const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 
 const ChatbotAnswersQuestionsInputSchema = z.object({
   question: z.string().describe('The question to be answered by the chatbot.'),
-  knowledgeBase: z.string().optional().describe('Admin provided knowledge base as string.'),
 });
 export type ChatbotAnswersQuestionsInput = z.infer<typeof ChatbotAnswersQuestionsInputSchema>;
 
@@ -27,10 +31,38 @@ export async function chatbotAnswersQuestions(input: ChatbotAnswersQuestionsInpu
 
 const prompt = ai.definePrompt({
   name: 'chatbotAnswersQuestionsPrompt',
-  input: {schema: ChatbotAnswersQuestionsInputSchema},
+  input: {schema: z.object({
+    question: z.string(),
+    knowledgeBase: z.string().optional(),
+  })},
   output: {schema: ChatbotAnswersQuestionsOutputSchema},
-  prompt: `You are a helpful chatbot. Use the following knowledge base, if provided, to answer the user's question. If the knowledge base is not provided, use your general knowledge to answer the question.\n\nKnowledge Base:\n{{{knowledgeBase}}}\n\nQuestion: {{{question}}}`,
+  prompt: `You are a helpful chatbot for a service called M-Health. Your purpose is to provide helpful information about mental health and wellness based on the documents provided by the service administrator.
+
+Use the following knowledge base to answer the user's question. The knowledge base is a compilation of information from trusted PDFs. Base your answer ONLY on this information. If the answer cannot be found in the knowledge base, you MUST state that you do not have information on that topic and suggest the user consult a healthcare professional. Do not use any external knowledge.
+
+Knowledge Base:
+---
+{{{knowledgeBase}}}
+---
+
+User's Question: {{{question}}}`,
 });
+
+async function getKnowledgeBaseContent(): Promise<string> {
+    try {
+        const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
+        const knowledgeDoc = await getDoc(knowledgeDocRef);
+
+        if (knowledgeDoc.exists()) {
+            return knowledgeDoc.data().content || '';
+        }
+        return '';
+    } catch (error) {
+        console.error("Error fetching knowledge base:", error);
+        return '';
+    }
+}
+
 
 const chatbotAnswersQuestionsFlow = ai.defineFlow(
   {
@@ -39,7 +71,12 @@ const chatbotAnswersQuestionsFlow = ai.defineFlow(
     outputSchema: ChatbotAnswersQuestionsOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    const knowledgeBase = await getKnowledgeBaseContent();
+
+    const {output} = await prompt({
+        question: input.question,
+        knowledgeBase: knowledgeBase || 'No knowledge base provided.',
+    });
     return output!;
   }
 );
