@@ -6,7 +6,7 @@ import {
   Home,
   MessageSquare,
   BrainCircuit,
-  PanelLeft,
+  Users,
   LogOut,
   Bot,
 } from 'lucide-react';
@@ -69,6 +69,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     { href: '/admin', icon: Home, label: 'Dashboard' },
     { href: '/admin/knowledge', icon: BrainCircuit, label: 'Knowledge Base' },
     { href: '/admin/history', icon: MessageSquare, label: 'Chat History' },
+    { href: '/admin/users', icon: Users, label: 'User Profiles' },
   ];
 
   return (
