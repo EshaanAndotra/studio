@@ -6,4 +6,5 @@ export type User = {
   loginCount?: number;
   createdAt: string;
   lastLogin?: string;
+  adminNotes?: string;
 };
