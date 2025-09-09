@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { type User } from '@/lib/auth';
 import type { Message } from '@/components/chat-page';
@@ -125,20 +125,18 @@ export default function ChatHistoryPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const fetchUsers = async () => {
-            try {
-                const usersQuery = query(collection(db, 'users'), orderBy('name', 'asc'));
-                const querySnapshot = await getDocs(usersQuery);
-                const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-                setUsers(usersList.filter(u => u.role === 'user'));
-            } catch (error) {
-                console.error("Error fetching users:", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
+        // Use onSnapshot for real-time user updates, though less critical here than chat.
+        const usersQuery = query(collection(db, 'users'), orderBy('name', 'asc'));
+        const unsubscribe = onSnapshot(usersQuery, (querySnapshot) => {
+            const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+            setUsers(usersList.filter(u => u.role === 'user'));
+            setIsLoading(false);
+        }, (error) => {
+            console.error("Error fetching users:", error);
+            setIsLoading(false);
+        });
 
-        fetchUsers();
+        return () => unsubscribe();
     }, []);
 
     if (isLoading) {
