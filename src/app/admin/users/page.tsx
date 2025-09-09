@@ -1,5 +1,9 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { type User } from '@/lib/auth';
 import {
   Card,
   CardContent,
@@ -7,38 +11,101 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ShieldAlert } from 'lucide-react';
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Users } from 'lucide-react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { format } from 'date-fns';
 
 export default function UsersPage() {
-  const firebaseConsoleUsersUrl = `https://console.firebase.google.com/project/m-health-jxug7/authentication/users`;
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(usersQuery, (querySnapshot) => {
+      const usersList = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate ? format(data.createdAt.toDate(), 'PPP') : 'N/A',
+        } as User;
+      });
+      setUsers(usersList);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error fetching users:", error);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>User Management</CardTitle>
+        <CardTitle>User Profiles</CardTitle>
         <CardDescription>
-          View and manage all users on the M-Health platform.
+          An overview of all registered users on the platform.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col items-center justify-center space-y-6 rounded-lg border-2 border-dashed border-yellow-400/80 bg-yellow-50/50 p-12 dark:bg-yellow-900/10">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/40">
-            <ShieldAlert className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-          <div className="text-center">
-            <h3 className="text-lg font-semibold text-foreground">Secure User Management</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              For security, user data should be managed directly in the Firebase console.
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              This prevents unauthorized access and ensures data privacy.
-            </p>
+        ) : users.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-8 border-2 border-dashed rounded-lg">
+            <Users className="w-12 h-12 mb-4" />
+            <h3 className="font-semibold text-lg">No Users Found</h3>
+            <p className="text-sm">As soon as a new user signs up, they will appear here.</p>
           </div>
-          <Button asChild>
-            <a href={firebaseConsoleUsersUrl} target="_blank" rel="noopener noreferrer">
-              Go to Firebase Console
-            </a>
-          </Button>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead className="text-center">Logins</TableHead>
+                <TableHead className="text-right">Date Joined</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback className="bg-muted">
+                            {user.name.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium">{user.name}</p>
+                        <p className="text-sm text-muted-foreground">{user.email}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={user.role === 'admin' ? 'destructive' : 'secondary'}>
+                      {user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">{user.loginCount || 1}</TableCell>
+                  <TableCell className="text-right">{user.createdAt}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
