@@ -145,8 +145,14 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
         success: true,
         message: `${input.documents.length} PDF(s) uploaded and added to knowledge base.`,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error processing PDFs:", error);
+       if (error.code === 'storage/unauthorized') {
+        return {
+          success: false,
+          message: 'Permission Denied. The server does not have permission to write to Firebase Storage. Please grant the "Storage Admin" role to your App Hosting service account in the Google Cloud IAM console.'
+        };
+      }
       return {
         success: false,
         message: `Failed to process PDFs. ${ (error as Error).message }`,
@@ -217,7 +223,10 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         const textExtractionPromises = allDocs.map(async (docInfo) => {
             try {
                 const fileRef = ref(storage, docInfo.filePath);
-                const fileBuffer = await getBytes(fileRef);
+                
+                // Use getStream for memory efficiency, especially with larger files
+                const stream = await getStream(fileRef);
+                const fileBuffer = await streamToBuffer(stream);
                 
                 const dataUri = `data:application/pdf;base64,${fileBuffer.toString('base64')}`;
 
