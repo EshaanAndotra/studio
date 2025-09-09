@@ -68,6 +68,7 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
 
 const KNOWLEDGE_COLLECTION = 'knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
+const STORAGE_BUCKET = 'm-health-jxug7.appspot.com';
 
 const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   {
@@ -77,7 +78,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
-      const bucket = adminStorage.bucket();
+      const bucket = adminStorage.bucket(STORAGE_BUCKET);
 
       // 1. Prepare documents with unique IDs first
       const documentsWithIds = input.documents.map(doc => ({
@@ -185,7 +186,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
       const documentData = docSnap.data() as KnowledgeDocument;
       
       // Delete file from Firebase Storage using Admin SDK
-      const bucket = adminStorage.bucket();
+      const bucket = adminStorage.bucket(STORAGE_BUCKET);
       const file = bucket.file(documentData.filePath);
       await file.delete();
       
@@ -212,7 +213,7 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         const allDocs = await getKnowledgeDocuments();
         let combinedContent = '';
 
-        const bucket = adminStorage.bucket();
+        const bucket = adminStorage.bucket(STORAGE_BUCKET);
 
         const textExtractionPromises = allDocs.map(async (docInfo) => {
             try {
