@@ -12,10 +12,10 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
-import { db, app } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
 import { media } from 'genkit';
-import { getStorage, ref, uploadString, getDownloadURL, deleteObject, getBytes, getStream } from "firebase/storage";
+import { storage as adminStorage } from '@/lib/firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -69,8 +69,6 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
 const KNOWLEDGE_COLLECTION = 'knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 
-const storage = getStorage(app, 'gs://m-health-jxug7.firebasestorage.app');
-
 const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   {
     name: 'adminUploadsPdfKnowledgeBaseFlow',
@@ -79,6 +77,8 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   },
   async (input) => {
     try {
+      const bucket = adminStorage.bucket();
+
       // 1. Prepare documents with unique IDs first
       const documentsWithIds = input.documents.map(doc => ({
         ...doc,
@@ -89,10 +89,15 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
       const processingResults = await Promise.all(
         documentsWithIds.map(async (document) => {
           const filePath = `knowledge_base/${document.uniqueId}_${document.fileName}`;
-          const storageRef = ref(storage, filePath);
+          const file = bucket.file(filePath);
           
-          await uploadString(storageRef, document.pdfDataUri, 'data_url');
+          const base64Data = document.pdfDataUri.substring(document.pdfDataUri.indexOf(',') + 1);
+          const buffer = Buffer.from(base64Data, 'base64');
           
+          await file.save(buffer, {
+            metadata: { contentType: 'application/pdf' },
+          });
+
           const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
 
           return {
@@ -147,7 +152,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
       };
     } catch (error: any) {
       console.error("Error processing PDFs:", error);
-       if (error.code === 'storage/unauthorized') {
+       if (error.code === 7 || (error.response?.body as any)?.error?.message.includes('permission')) {
         return {
           success: false,
           message: 'Permission Denied. The server does not have permission to write to Firebase Storage. Please grant the "Storage Admin" role to your App Hosting service account in the Google Cloud IAM console.'
@@ -179,9 +184,10 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
       
       const documentData = docSnap.data() as KnowledgeDocument;
       
-      // Delete file from Firebase Storage
-      const fileRef = ref(storage, documentData.filePath);
-      await deleteObject(fileRef);
+      // Delete file from Firebase Storage using Admin SDK
+      const bucket = adminStorage.bucket();
+      const file = bucket.file(documentData.filePath);
+      await file.delete();
       
       // Delete document from Firestore
       await deleteDoc(docRef);
@@ -197,20 +203,6 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
   }
 );
 
-// Helper function to read a stream into a buffer
-async function streamToBuffer(readableStream: NodeJS.ReadableStream): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    readableStream.on('data', (data) => {
-      chunks.push(data instanceof Buffer ? data : Buffer.from(data));
-    });
-    readableStream.on('end', () => {
-      resolve(Buffer.concat(chunks));
-    });
-    readableStream.on('error', reject);
-  });
-}
-
 const rebuildKnowledgeBaseFlow = ai.defineFlow({
     name: 'rebuildKnowledgeBaseFlow',
     inputSchema: z.undefined(),
@@ -220,13 +212,13 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         const allDocs = await getKnowledgeDocuments();
         let combinedContent = '';
 
+        const bucket = adminStorage.bucket();
+
         const textExtractionPromises = allDocs.map(async (docInfo) => {
             try {
-                const fileRef = ref(storage, docInfo.filePath);
+                const file = bucket.file(docInfo.filePath);
                 
-                // Use getStream for memory efficiency, especially with larger files
-                const stream = await getStream(fileRef);
-                const fileBuffer = await streamToBuffer(stream);
+                const [fileBuffer] = await file.download();
                 
                 const dataUri = `data:application/pdf;base64,${fileBuffer.toString('base64')}`;
 
