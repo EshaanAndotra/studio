@@ -229,8 +229,8 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 
                 return `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
             } catch (fetchError) {
-                console.warn(`Error processing file ${docInfo.fileName}, skipping. Error:`, fetchError);
-                return ''; // Return empty string for failed files
+                console.warn(`Error processing file ${docInfo.fileName} for rebuild, skipping. Error:`, fetchError);
+                return ''; // Return empty string for failed files to avoid breaking the whole process
             }
         });
 
@@ -239,6 +239,7 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         
         const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
         
+        // Overwrite the content with the newly combined text
         await setDoc(knowledgeDocRef, {
             content: combinedContent,
             lastUpdatedAt: serverTimestamp(),
