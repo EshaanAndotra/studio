@@ -9,6 +9,7 @@ import {
   Users,
   LogOut,
   Bot,
+  Settings,
 } from 'lucide-react';
 import { useEffect } from 'react';
 
@@ -70,6 +71,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     { href: '/admin/knowledge', icon: BrainCircuit, label: 'Knowledge Base' },
     { href: '/admin/history', icon: MessageSquare, label: 'Chat History' },
     { href: '/admin/users', icon: Users, label: 'User Profiles' },
+    { href: '/admin/settings', icon: Settings, label: 'Settings' },
   ];
 
   return (

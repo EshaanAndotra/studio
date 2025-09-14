@@ -7,3 +7,4 @@ import '@/ai/flows/admin-manages-user-profiles.ts';
 import '@/ai/schemas/admin-manages-user-profiles.ts';
 import '@/ai/flows/user-manages-own-profile.ts';
 import '@/ai/schemas/user-manages-own-profile.ts';
+import '@/ai/flows/admin-manages-settings.ts';

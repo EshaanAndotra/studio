@@ -14,6 +14,8 @@ import { db } from '@/lib/firebase';
 
 const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
+const SETTINGS_COLLECTION = 'settings';
+const CHATBOT_PERSONA_DOC_ID = 'chatbot_persona';
 
 const ChatbotAnswersQuestionsInputSchema = z.object({
   question: z.string().describe('The question to be answered by the chatbot.'),
@@ -36,9 +38,17 @@ const prompt = ai.definePrompt({
     question: z.string(),
     knowledgeBase: z.string().optional(),
     userProfileInfo: z.string().optional(),
+    persona: z.string().optional(),
   })},
   output: {schema: ChatbotAnswersQuestionsOutputSchema},
-  prompt: `You are a helpful chatbot for a service called M-Health. Your purpose is to provide helpful information about health and wellness based on the documents provided by the service administrator.
+  prompt: `{{#if persona}}
+You MUST adopt the following persona and follow all instructions within it:
+<persona>
+{{{persona}}}
+</persona>
+{{else}}
+You are a helpful chatbot for a service called M-Health. Your purpose is to provide helpful information about health and wellness based on the documents provided by the service administrator.
+{{/if}}
 
 Use the following knowledge base to answer the user's question. Base your answer ONLY on this information. If the answer cannot be found in the knowledge base, you MUST state that you do not have information on that topic and suggest the user consult a healthcare professional. Do not use any external knowledge.
 
@@ -72,6 +82,21 @@ async function getKnowledgeBaseContent(): Promise<string> {
     }
 }
 
+async function getChatbotPersonaContent(): Promise<string> {
+    try {
+        const personaDocRef = doc(db, SETTINGS_COLLECTION, CHATBOT_PERSONA_DOC_ID);
+        const personaDoc = await getDoc(personaDocRef);
+
+        if (personaDoc.exists()) {
+            return personaDoc.data().persona || '';
+        }
+        return '';
+    } catch (error) {
+        console.error("Error fetching chatbot persona:", error);
+        return '';
+    }
+}
+
 
 const chatbotAnswersQuestionsFlow = ai.defineFlow(
   {
@@ -80,12 +105,16 @@ const chatbotAnswersQuestionsFlow = ai.defineFlow(
     outputSchema: ChatbotAnswersQuestionsOutputSchema,
   },
   async input => {
-    const knowledgeBase = await getKnowledgeBaseContent();
+    const [knowledgeBase, persona] = await Promise.all([
+        getKnowledgeBaseContent(),
+        getChatbotPersonaContent()
+    ]);
 
     const {output} = await prompt({
         question: input.question,
         userProfileInfo: input.userProfileInfo,
         knowledgeBase: knowledgeBase || 'No knowledge base provided.',
+        persona: persona || '',
     });
     return output!;
   }
