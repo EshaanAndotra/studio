@@ -17,6 +17,7 @@ const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 
 const ChatbotAnswersQuestionsInputSchema = z.object({
   question: z.string().describe('The question to be answered by the chatbot.'),
+  userProfileInfo: z.string().optional().describe('The user\'s profile information to provide context.'),
 });
 export type ChatbotAnswersQuestionsInput = z.infer<typeof ChatbotAnswersQuestionsInputSchema>;
 
@@ -34,11 +35,19 @@ const prompt = ai.definePrompt({
   input: {schema: z.object({
     question: z.string(),
     knowledgeBase: z.string().optional(),
+    userProfileInfo: z.string().optional(),
   })},
   output: {schema: ChatbotAnswersQuestionsOutputSchema},
   prompt: `You are a helpful chatbot for a service called M-Health. Your purpose is to provide helpful information about mental health and wellness based on the documents provided by the service administrator.
 
-Use the following knowledge base to answer the user's question. The knowledge base is a compilation of information from trusted PDFs. Base your answer ONLY on this information. If the answer cannot be found in the knowledge base, you MUST state that you do not have information on that topic and suggest the user consult a healthcare professional. Do not use any external knowledge.
+Use the following knowledge base to answer the user's question. Base your answer ONLY on this information. If the answer cannot be found in the knowledge base, you MUST state that you do not have information on that topic and suggest the user consult a healthcare professional. Do not use any external knowledge.
+
+{{#if userProfileInfo}}
+You should also consider the following information about the user to personalize your answer:
+---
+User Profile: {{{userProfileInfo}}}
+---
+{{/if}}
 
 Knowledge Base:
 ---
@@ -75,6 +84,7 @@ const chatbotAnswersQuestionsFlow = ai.defineFlow(
 
     const {output} = await prompt({
         question: input.question,
+        userProfileInfo: input.userProfileInfo,
         knowledgeBase: knowledgeBase || 'No knowledge base provided.',
     });
     return output!;

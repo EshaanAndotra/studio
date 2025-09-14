@@ -20,6 +20,7 @@ export type UseAuthReturn = {
   login: (email: string, password: string) => Promise<User>;
   signUp: (name: string, email: string, password: string, role: 'user' | 'admin') => Promise<User>;
   logout: () => void;
+  refreshUserProfile: () => Promise<void>;
 };
 
 export function useAuth(): UseAuthReturn {
@@ -43,6 +44,8 @@ async function getUserProfile(uid: string): Promise<User | null> {
       role: userData.role,
       loginCount: userData.loginCount,
       createdAt: userData.createdAt?.toDate().toISOString() ?? new Date().toISOString(),
+      adminNotes: userData.adminNotes || '',
+      profileInfo: userData.profileInfo || '',
     };
   }
   return null;
@@ -50,7 +53,7 @@ async function getUserProfile(uid: string): Promise<User | null> {
 
 const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role: 'user' | 'admin'): Promise<User> => {
       const userDocRef = doc(db, 'users', firebaseUser.uid);
-      const newUserProfile: Omit<User, 'createdAt'> & {createdAt: any, lastLogin: any} = {
+      const newUserProfile: Omit<User, 'createdAt' | 'adminNotes' | 'profileInfo'> & {createdAt: any, lastLogin: any, adminNotes: string, profileInfo: string} = {
           id: firebaseUser.uid,
           name: name,
           email: firebaseUser.email!,
@@ -58,6 +61,8 @@ const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role:
           loginCount: 1,
           createdAt: serverTimestamp(),
           lastLogin: serverTimestamp(),
+          adminNotes: '',
+          profileInfo: '',
       };
       
       await setDoc(userDocRef, newUserProfile);
@@ -69,6 +74,15 @@ const createUserProfile = async (firebaseUser: FirebaseUser, name: string, role:
 export function useAuthHook(): UseAuthReturn {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshUserProfile = async () => {
+    const firebaseUser = auth.currentUser;
+    if (firebaseUser) {
+      const userProfile = await getUserProfile(firebaseUser.uid);
+      setUser(userProfile);
+    }
+  };
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -160,5 +174,5 @@ export function useAuthHook(): UseAuthReturn {
     setUser(null);
   };
 
-  return { user, loading, login, signUp, logout };
+  return { user, loading, login, signUp, logout, refreshUserProfile };
 }

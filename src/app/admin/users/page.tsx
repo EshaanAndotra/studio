@@ -130,6 +130,7 @@ export default function UsersPage() {
           ...data,
           createdAt: data.createdAt?.toDate ? format(data.createdAt.toDate(), 'PPP') : 'N/A',
           adminNotes: data.adminNotes || '',
+          profileInfo: data.profileInfo || '',
         } as User;
       });
       setUsers(usersList);

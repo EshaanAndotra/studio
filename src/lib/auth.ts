@@ -7,4 +7,5 @@ export type User = {
   createdAt: string;
   lastLogin?: string;
   adminNotes?: string;
+  profileInfo?: string;
 };

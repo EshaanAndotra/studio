@@ -8,7 +8,6 @@ import {
   query,
   orderBy,
   onSnapshot,
-  where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
@@ -18,6 +17,7 @@ import {
   Trash2,
   LogOut,
   MessageSquare,
+  User as UserIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +35,20 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { chatbotAnswersQuestions } from '@/ai/flows/chatbot-answers-questions-from-knowledge-base';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { updateUserProfileInfo } from '@/ai/flows/user-manages-own-profile';
+
 
 export type Message = {
   id?: string;
@@ -42,6 +56,88 @@ export type Message = {
   content: string;
   createdAt?: any;
 };
+
+function UserProfileDialog() {
+  const { user, refreshUserProfile } = useAuth();
+  const [profileInfo, setProfileInfo] = useState(user?.profileInfo || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (user) {
+      setProfileInfo(user.profileInfo || '');
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    setIsSaving(true);
+    try {
+      const result = await updateUserProfileInfo({ userId: user.id, profileInfo });
+      if (result.success) {
+        toast({
+          title: 'Success',
+          description: 'Your profile information has been updated.',
+        });
+        await refreshUserProfile();
+        setIsOpen(false);
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error updating profile',
+        description: (error as Error).message,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  return (
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogTrigger asChild>
+            <Button variant="ghost" size="icon">
+                <UserIcon className="h-5 w-5" />
+                <span className="sr-only">My Profile</span>
+            </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+                <DialogTitle>My Profile</DialogTitle>
+                <DialogDescription>
+                    This information will be used by the chatbot to provide more personalized responses.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+                <div className="grid w-full gap-1.5">
+                    <Label htmlFor="profile-info">Your Profile Details</Label>
+                    <Textarea
+                        id="profile-info"
+                        placeholder="e.g., I am a 30-year-old male with a history of anxiety..."
+                        value={profileInfo}
+                        onChange={(e) => setProfileInfo(e.target.value)}
+                        className="min-h-[150px]"
+                    />
+                </div>
+            </div>
+            <DialogFooter>
+                <DialogClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleSave} disabled={isSaving}>
+                    {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+  )
+
+}
+
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
@@ -106,7 +202,10 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      const { answer } = await chatbotAnswersQuestions({ question: userMessageContent });
+      const { answer } = await chatbotAnswersQuestions({ 
+          question: userMessageContent,
+          userProfileInfo: user.profileInfo || '',
+      });
       const assistantMessage: Message = {
         role: 'assistant',
         content: answer,
@@ -150,7 +249,8 @@ export default function ChatPage() {
           <Bot className="h-6 w-6 text-primary" />
           <span className="font-headline text-lg">M-Health Assistant</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <UserProfileDialog />
           <Button
             variant="ghost"
             size="icon"
