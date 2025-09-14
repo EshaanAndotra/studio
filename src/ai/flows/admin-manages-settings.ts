@@ -36,7 +36,7 @@ export async function updateChatbotPersona(input: UpdateChatbotPersonaInput): Pr
 }
 
 export async function getChatbotPersona(): Promise<GetChatbotPersonaOutput> {
-    return getChatbotPersonaFlow();
+    return getChatbotPersonaFlow(undefined);
 }
 
 const updateChatbotPersonaFlow = ai.defineFlow(
