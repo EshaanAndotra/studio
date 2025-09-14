@@ -12,7 +12,7 @@ import {z} from 'genkit';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
-const KNOWLEDGE_COLLECTION = 'knowledge_base';
+const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 
 const ChatbotAnswersQuestionsInputSchema = z.object({

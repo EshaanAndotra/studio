@@ -53,7 +53,7 @@ export async function adminUploadsPdfKnowledgeBase(input: AdminUploadsPdfKnowled
 
 export async function getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
   try {
-    const q = query(collection(db, 'knowledge_documents'), orderBy('uploadedAt', 'desc'));
+    const q = query(collection(db, 'production_knowledge_documents'), orderBy('uploadedAt', 'desc'));
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as KnowledgeDocument));
   } catch (error) {
@@ -66,7 +66,7 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
     return deleteKnowledgeDocumentFlow({ docId });
 }
 
-const KNOWLEDGE_COLLECTION = 'knowledge_base';
+const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 const STORAGE_BUCKET = 'm-health-jxug7.appspot.com';
 
@@ -117,7 +117,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
 
       // 4a. Add new document metadata to the batch
       processingResults.forEach(result => {
-        const newDocRef = doc(collection(db, 'knowledge_documents'));
+        const newDocRef = doc(collection(db, 'production_knowledge_documents'));
         const metadata = {
           fileName: result.fileName,
           uploadedAt: serverTimestamp(),
@@ -176,7 +176,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
   },
   async ({ docId }) => {
     try {
-      const docRef = doc(db, 'knowledge_documents', docId);
+      const docRef = doc(db, 'production_knowledge_documents', docId);
       const docSnap = await getDoc(docRef);
 
       if (!docSnap.exists()) {
