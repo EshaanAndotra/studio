@@ -70,7 +70,7 @@ const updateChatbotPersonaFlow = ai.defineFlow(
 const getChatbotPersonaFlow = ai.defineFlow(
   {
     name: 'getChatbotPersonaFlow',
-    inputSchema: z.undefined(),
+    inputSchema: z.object({}),
     outputSchema: GetChatbotPersonaOutputSchema,
   },
   async () => {
