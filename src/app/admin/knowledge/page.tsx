@@ -1,11 +1,11 @@
 'use client';
 import { useState, type ChangeEvent, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { adminUploadsPdfKnowledgeBase, getKnowledgeDocuments, deleteKnowledgeDocument, type KnowledgeDocument } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
-import { UploadCloud, Loader2, FileText, X, Files, Trash2 } from "lucide-react";
+import { adminUploadsPdfKnowledgeBase, getKnowledgeDocuments, deleteKnowledgeDocument, type KnowledgeDocument, rebuildKnowledgeBase } from '@/ai/flows/admin-uploads-pdf-knowledge-base';
+import { UploadCloud, Loader2, FileText, X, Files, Trash2, RefreshCw } from "lucide-react";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   AlertDialog,
@@ -18,12 +18,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Separator } from '@/components/ui/separator';
 
 export default function KnowledgeBasePage() {
     const [files, setFiles] = useState<File[]>([]);
     const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isFetchingDocs, setIsFetchingDocs] = useState(true);
+    const [isRebuilding, setIsRebuilding] = useState(false);
     const { toast } = useToast();
 
     const fetchDocuments = async () => {
@@ -126,6 +128,29 @@ export default function KnowledgeBasePage() {
             setIsLoading(false);
         }
     };
+    
+    const handleRebuild = async () => {
+        setIsRebuilding(true);
+        try {
+            const result = await rebuildKnowledgeBase();
+            if (result.success) {
+                toast({
+                    title: 'Rebuild Complete',
+                    description: 'The knowledge base has been successfully synchronized with the bucket content.',
+                });
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+             toast({
+                variant: 'destructive',
+                title: 'Rebuild Failed',
+                description: (error as Error).message,
+            });
+        } finally {
+            setIsRebuilding(false);
+        }
+    }
 
 
     return (
@@ -137,7 +162,7 @@ export default function KnowledgeBasePage() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex flex-col items-center justify-center w-full">
-                        <label htmlFor="pdf-upload" className="relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-accent/50 transition-colors">
+                        <label htmlFor="pdf-upload" className="relative flex flex-col items-center justify-center w-full h-52 border-2 border-dashed rounded-lg cursor-pointer bg-card hover:bg-accent/50 transition-colors">
                             {files.length > 0 ? (
                                 <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center">
                                     <Files className="w-10 h-10 mb-3 text-primary" />
@@ -172,6 +197,28 @@ export default function KnowledgeBasePage() {
                         )}
                     </Button>
                 </CardContent>
+                <CardFooter className="flex flex-col gap-4 border-t pt-6">
+                    <div className="w-full">
+                         <h3 className="text-sm font-semibold mb-2">Advanced Options</h3>
+                        <p className="text-xs text-muted-foreground mb-4">
+                           If your knowledge base gets out of sync, you can manually trigger a full rebuild based on the documents currently in your storage bucket.
+                        </p>
+                         <Button onClick={handleRebuild} disabled={isRebuilding || isLoading} variant="outline" className="w-full">
+                            {isRebuilding ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Rebuilding...
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="mr-2 h-4 w-4" />
+                                    Rebuild Knowledge Base from Bucket
+                                </>
+                            )}
+                        </Button>
+                    </div>
+
+                </CardFooter>
             </Card>
 
             <Card>
@@ -180,7 +227,7 @@ export default function KnowledgeBasePage() {
                     <CardDescription>The following documents are currently part of the chatbot's knowledge.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <ScrollArea className="h-[24.5rem] pr-4">
+                    <ScrollArea className="h-[27rem] pr-4">
                          {isFetchingDocs ? (
                             <div className="flex items-center justify-center h-full">
                                 <Loader2 className="h-6 w-6 animate-spin text-primary" />

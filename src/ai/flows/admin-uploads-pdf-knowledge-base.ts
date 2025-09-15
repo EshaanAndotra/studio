@@ -7,6 +7,7 @@
  * - AdminUploadsPdfKnowledgeBaseOutput - The return type for the adminUploadsPdfKnowledgeBase function.
  * - getKnowledgeDocuments - A function to retrieve all knowledge documents.
  * - deleteKnowledgeDocument - A function to delete a knowledge document.
+ * - rebuildKnowledgeBase - A function to manually trigger a rebuild of the entire knowledge base from Storage.
  */
 
 import {ai} from '@/ai/genkit';
@@ -46,6 +47,12 @@ const AdminUploadsPdfKnowledgeBaseOutputSchema = z.object({
 });
 export type AdminUploadsPdfKnowledgeBaseOutput = z.infer<typeof AdminUploadsPdfKnowledgeBaseOutputSchema>;
 
+const RebuildKnowledgeBaseOutputSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+export type RebuildKnowledgeBaseOutput = z.infer<typeof RebuildKnowledgeBaseOutputSchema>;
+
 
 export async function adminUploadsPdfKnowledgeBase(input: AdminUploadsPdfKnowledgeBaseInput): Promise<AdminUploadsPdfKnowledgeBaseOutput> {
   return adminUploadsPdfKnowledgeBaseFlow(input);
@@ -66,9 +73,13 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
     return deleteKnowledgeDocumentFlow({ docId });
 }
 
+export async function rebuildKnowledgeBase(): Promise<RebuildKnowledgeBaseOutput> {
+    return rebuildKnowledgeBaseFlow();
+}
+
 const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
-const STORAGE_BUCKET = 'm-health-jxug7.firebasestorage.app';
+const STORAGE_BUCKET = 'm-health-jxug7.appspot.com';
 
 const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   {
@@ -207,7 +218,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
 const rebuildKnowledgeBaseFlow = ai.defineFlow({
     name: 'rebuildKnowledgeBaseFlow',
     inputSchema: z.undefined(),
-    outputSchema: z.object({ success: z.boolean(), message: z.string() }),
+    outputSchema: RebuildKnowledgeBaseOutputSchema,
 }, async () => {
     try {
         const allDocs = await getKnowledgeDocuments();
@@ -215,10 +226,25 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
 
         const bucket = adminStorage.bucket(STORAGE_BUCKET);
 
+        if (allDocs.length === 0) {
+             const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
+             await setDoc(knowledgeDocRef, {
+                content: '',
+                lastUpdatedAt: serverTimestamp(),
+            }, { merge: true });
+            return { success: true, message: 'Knowledge base is empty and has been cleared.' };
+        }
+
         const textExtractionPromises = allDocs.map(async (docInfo) => {
             try {
                 const file = bucket.file(docInfo.filePath);
                 
+                const [exists] = await file.exists();
+                if (!exists) {
+                     console.warn(`File ${docInfo.filePath} not found in Storage for rebuild, skipping.`);
+                     return ''; // Skip if file doesn't exist
+                }
+
                 const [fileBuffer] = await file.download();
                 
                 const dataUri = `data:application/pdf;base64,${fileBuffer.toString('base64')}`;
@@ -229,13 +255,13 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 
                 return `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
             } catch (fetchError) {
-                console.warn(`Error processing file ${docInfo.fileName} for rebuild, skipping. Error:`, fetchError);
+                console.error(`Error processing file ${docInfo.fileName} for rebuild, skipping. Error:`, fetchError);
                 return ''; // Return empty string for failed files to avoid breaking the whole process
             }
         });
 
         const allTextContents = await Promise.all(textExtractionPromises);
-        combinedContent = allTextContents.join('');
+        combinedContent = allTextContents.filter(Boolean).join('');
         
         const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
         
