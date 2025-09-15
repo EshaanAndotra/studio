@@ -7,21 +7,33 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { updateChatbotPersona, getChatbotPersona } from '@/ai/flows/admin-manages-settings';
+import { updateChatbotPersona, getChatbotPersona, updateChatbotModel, getChatbotModel } from '@/ai/flows/admin-manages-settings';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+const models = [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'gemini-1.5-flash-latest', name: 'Gemini 1.5 Flash' },
+    { id: 'gemini-1.5-pro-latest', name: 'Gemini 1.5 Pro' },
+];
 
 export default function SettingsPage() {
   const [persona, setPersona] = useState('');
+  const [model, setModel] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    async function fetchPersona() {
+    async function fetchSettings() {
       setIsLoading(true);
       try {
-        const result = await getChatbotPersona();
-        if (result.persona !== undefined) {
-          setPersona(result.persona);
+        const [personaResult, modelResult] = await Promise.all([
+            getChatbotPersona(),
+            getChatbotModel()
+        ]);
+        
+        if (personaResult.persona !== undefined) {
+          setPersona(personaResult.persona);
         } else {
            toast({
             variant: 'destructive',
@@ -29,8 +41,19 @@ export default function SettingsPage() {
             description: 'Could not fetch the current chatbot persona.',
           });
         }
+        
+        if (modelResult.model) {
+            setModel(modelResult.model);
+        } else {
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: 'Could not fetch the current chatbot model.',
+            });
+        }
+
       } catch (error) {
-        console.error('Failed to fetch persona', error);
+        console.error('Failed to fetch settings', error);
         toast({
             variant: 'destructive',
             title: 'Error',
@@ -40,20 +63,24 @@ export default function SettingsPage() {
         setIsLoading(false);
       }
     }
-    fetchPersona();
+    fetchSettings();
   }, [toast]);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const result = await updateChatbotPersona({ persona });
-      if (result.success) {
+      const [personaResult, modelResult] = await Promise.all([
+        updateChatbotPersona({ persona }),
+        updateChatbotModel({ model }),
+      ]);
+
+      if (personaResult.success && modelResult.success) {
         toast({
           title: 'Success!',
-          description: result.message,
+          description: 'Chatbot settings have been updated.',
         });
       } else {
-        throw new Error(result.message);
+        throw new Error(personaResult.message || modelResult.message);
       }
     } catch (error) {
        toast({
@@ -67,43 +94,60 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="grid gap-6">
-      <Card className="w-full max-w-2xl mx-auto">
+    <Card className="w-full max-w-2xl mx-auto">
         <CardHeader>
           <CardTitle>Chatbot Settings</CardTitle>
           <CardDescription>
-            Define the persona and behavior of your AI assistant. This will change how it responds to all users.
+            Define the persona, behavior, and underlying model of your AI assistant.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
           {isLoading ? (
-            <div className="flex justify-center items-center h-48">
+            <div className="flex justify-center items-center h-64">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
-            <div className="grid w-full gap-1.5">
-              <Label htmlFor="persona">Chatbot Persona</Label>
-              <Textarea
-                id="persona"
-                placeholder="e.g., You are a friendly and empathetic assistant. You should use simple language and avoid technical jargon. Always start your response with 'Hello there!'."
-                value={persona}
-                onChange={(e) => setPersona(e.target.value)}
-                className="min-h-[200px]"
-                disabled={isSaving}
-              />
-              <p className="text-sm text-muted-foreground">
-                Provide detailed instructions on how the chatbot should behave, its tone, and any specific rules it must follow.
-              </p>
-            </div>
+            <>
+                <div className="grid w-full gap-1.5">
+                    <Label htmlFor="persona">Chatbot Persona</Label>
+                    <Textarea
+                        id="persona"
+                        placeholder="e.g., You are a friendly and empathetic assistant. You should use simple language and avoid technical jargon."
+                        value={persona}
+                        onChange={(e) => setPersona(e.target.value)}
+                        className="min-h-[150px]"
+                        disabled={isSaving}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                        Provide detailed instructions on how the chatbot should behave.
+                    </p>
+                </div>
+
+                <div className="grid w-full gap-1.5">
+                    <Label htmlFor="model">Chatbot Model</Label>
+                     <Select value={model} onValueChange={setModel} disabled={isSaving}>
+                        <SelectTrigger id="model">
+                            <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {models.map((m) => (
+                                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground">
+                        Choose the AI model that will power your chatbot&apos;s responses.
+                    </p>
+                </div>
+            </>
           )}
         </CardContent>
         <CardFooter className="border-t px-6 py-4">
             <Button onClick={handleSave} disabled={isLoading || isSaving} className="ml-auto">
                 {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Persona
+                Save Settings
             </Button>
         </CardFooter>
       </Card>
-    </div>
   );
 }

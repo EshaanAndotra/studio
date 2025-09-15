@@ -4,15 +4,19 @@
  *
  * - updateChatbotPersona - A function that allows an admin to update the chatbot's persona.
  * - getChatbotPersona - A function that retrieves the chatbot's current persona.
+ * - updateChatbotModel - A function that allows an admin to update the chatbot's model.
+ * - getChatbotModel - A function that retrieves the chatbot's current model.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { googleAI } from '@genkit-ai/googleai';
 
 const SETTINGS_COLLECTION = 'settings';
 const CHATBOT_PERSONA_DOC_ID = 'chatbot_persona';
+const CHATBOT_MODEL_DOC_ID = 'chatbot_model';
 
 const UpdateChatbotPersonaInputSchema = z.object({
   persona: z.string().describe("The new persona for the chatbot."),
@@ -30,6 +34,22 @@ const GetChatbotPersonaOutputSchema = z.object({
 });
 export type GetChatbotPersonaOutput = z.infer<typeof GetChatbotPersonaOutputSchema>;
 
+const UpdateChatbotModelInputSchema = z.object({
+  model: z.string().describe("The new model for the chatbot."),
+});
+export type UpdateChatbotModelInput = z.infer<typeof UpdateChatbotModelInputSchema>;
+
+const UpdateChatbotModelOutputSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+});
+export type UpdateChatbotModelOutput = z.infer<typeof UpdateChatbotModelOutputSchema>;
+
+const GetChatbotModelOutputSchema = z.object({
+  model: z.string().optional(),
+});
+export type GetChatbotModelOutput = z.infer<typeof GetChatbotModelOutputSchema>;
+
 
 export async function updateChatbotPersona(input: UpdateChatbotPersonaInput): Promise<UpdateChatbotPersonaOutput> {
     return updateChatbotPersonaFlow(input);
@@ -37,6 +57,14 @@ export async function updateChatbotPersona(input: UpdateChatbotPersonaInput): Pr
 
 export async function getChatbotPersona(): Promise<GetChatbotPersonaOutput> {
     return getChatbotPersonaFlow({});
+}
+
+export async function updateChatbotModel(input: UpdateChatbotModelInput): Promise<UpdateChatbotModelOutput> {
+    return updateChatbotModelFlow(input);
+}
+
+export async function getChatbotModel(): Promise<GetChatbotModelOutput> {
+    return getChatbotModelFlow({});
 }
 
 const updateChatbotPersonaFlow = ai.defineFlow(
@@ -86,6 +114,57 @@ const getChatbotPersonaFlow = ai.defineFlow(
     } catch (error) {
       console.error('Error getting chatbot persona:', error);
       return { persona: '' };
+    }
+  }
+);
+
+const updateChatbotModelFlow = ai.defineFlow(
+  {
+    name: 'updateChatbotModelFlow',
+    inputSchema: UpdateChatbotModelInputSchema,
+    outputSchema: UpdateChatbotModelOutputSchema,
+  },
+  async ({ model }) => {
+    try {
+      const modelDocRef = doc(db, SETTINGS_COLLECTION, CHATBOT_MODEL_DOC_ID);
+      await setDoc(modelDocRef, {
+        model: model,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      return {
+        success: true,
+        message: 'Chatbot model updated successfully.',
+      };
+    } catch (error) {
+      console.error('Error updating chatbot model:', error);
+      return {
+        success: false,
+        message: 'Failed to update chatbot model.',
+      };
+    }
+  }
+);
+
+const getChatbotModelFlow = ai.defineFlow(
+  {
+    name: 'getChatbotModelFlow',
+    inputSchema: z.object({}),
+    outputSchema: GetChatbotModelOutputSchema,
+  },
+  async () => {
+    try {
+      const modelDocRef = doc(db, SETTINGS_COLLECTION, CHATBOT_MODEL_DOC_ID);
+      const docSnap = await getDoc(modelDocRef);
+
+      if (docSnap.exists() && docSnap.data().model) {
+        return { model: docSnap.data().model };
+      } else {
+        return { model: 'gemini-2.5-flash' };
+      }
+    } catch (error) {
+      console.error('Error getting chatbot model:', error);
+      return { model: 'gemini-2.5-flash' };
     }
   }
 );

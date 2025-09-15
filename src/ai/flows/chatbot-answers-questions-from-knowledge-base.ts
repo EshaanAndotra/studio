@@ -11,11 +11,13 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { googleAI } from '@genkit-ai/googleai';
 
 const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
 const SETTINGS_COLLECTION = 'settings';
 const CHATBOT_PERSONA_DOC_ID = 'chatbot_persona';
+const CHATBOT_MODEL_DOC_ID = 'chatbot_model';
 
 const ChatbotAnswersQuestionsInputSchema = z.object({
   question: z.string().describe('The question to be answered by the chatbot.'),
@@ -97,6 +99,20 @@ async function getChatbotPersonaContent(): Promise<string> {
     }
 }
 
+async function getChatbotModelName(): Promise<string> {
+    try {
+        const modelDocRef = doc(db, SETTINGS_COLLECTION, CHATBOT_MODEL_DOC_ID);
+        const modelDoc = await getDoc(modelDocRef);
+
+        if (modelDoc.exists() && modelDoc.data().model) {
+            return modelDoc.data().model;
+        }
+        return 'gemini-2.5-flash'; // Fallback to default
+    } catch (error) {
+        console.error("Error fetching chatbot model:", error);
+        return 'gemini-2.5-flash';
+    }
+}
 
 const chatbotAnswersQuestionsFlow = ai.defineFlow(
   {
@@ -105,12 +121,18 @@ const chatbotAnswersQuestionsFlow = ai.defineFlow(
     outputSchema: ChatbotAnswersQuestionsOutputSchema,
   },
   async input => {
-    const [knowledgeBase, persona] = await Promise.all([
+    const [knowledgeBase, persona, modelName] = await Promise.all([
         getKnowledgeBaseContent(),
-        getChatbotPersonaContent()
+        getChatbotPersonaContent(),
+        getChatbotModelName()
     ]);
+    
+    const dynamicPrompt = ai.definePrompt({
+        ...prompt,
+        model: googleAI.model(modelName),
+    });
 
-    const {output} = await prompt({
+    const {output} = await dynamicPrompt({
         question: input.question,
         userProfileInfo: input.userProfileInfo,
         knowledgeBase: knowledgeBase || 'No knowledge base provided.',
