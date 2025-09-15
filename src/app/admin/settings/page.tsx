@@ -70,8 +70,8 @@ export default function SettingsPage() {
     setIsSaving(true);
     try {
       const [personaResult, modelResult] = await Promise.all([
-        updateChatbotPersona({ persona }),
-        updateChatbotModel({ model }),
+        updateChatbotPersona(persona),
+        updateChatbotModel(model),
       ]);
 
       if (personaResult.success && modelResult.success) {

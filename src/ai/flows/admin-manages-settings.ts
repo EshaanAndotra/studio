@@ -18,11 +18,6 @@ const SETTINGS_COLLECTION = 'settings';
 const CHATBOT_PERSONA_DOC_ID = 'chatbot_persona';
 const CHATBOT_MODEL_DOC_ID = 'chatbot_model';
 
-const UpdateChatbotPersonaInputSchema = z.object({
-  persona: z.string().describe("The new persona for the chatbot."),
-});
-export type UpdateChatbotPersonaInput = z.infer<typeof UpdateChatbotPersonaInputSchema>;
-
 const UpdateChatbotPersonaOutputSchema = z.object({
   success: z.boolean(),
   message: z.string(),
@@ -33,11 +28,6 @@ const GetChatbotPersonaOutputSchema = z.object({
   persona: z.string().optional(),
 });
 export type GetChatbotPersonaOutput = z.infer<typeof GetChatbotPersonaOutputSchema>;
-
-const UpdateChatbotModelInputSchema = z.object({
-  model: z.string().describe("The new model for the chatbot."),
-});
-export type UpdateChatbotModelInput = z.infer<typeof UpdateChatbotModelInputSchema>;
 
 const UpdateChatbotModelOutputSchema = z.object({
   success: z.boolean(),
@@ -51,16 +41,16 @@ const GetChatbotModelOutputSchema = z.object({
 export type GetChatbotModelOutput = z.infer<typeof GetChatbotModelOutputSchema>;
 
 
-export async function updateChatbotPersona(input: UpdateChatbotPersonaInput): Promise<UpdateChatbotPersonaOutput> {
-    return updateChatbotPersonaFlow(input);
+export async function updateChatbotPersona(persona: string): Promise<UpdateChatbotPersonaOutput> {
+    return updateChatbotPersonaFlow(persona);
 }
 
 export async function getChatbotPersona(): Promise<GetChatbotPersonaOutput> {
     return getChatbotPersonaFlow({});
 }
 
-export async function updateChatbotModel(input: UpdateChatbotModelInput): Promise<UpdateChatbotModelOutput> {
-    return updateChatbotModelFlow(input);
+export async function updateChatbotModel(model: string): Promise<UpdateChatbotModelOutput> {
+    return updateChatbotModelFlow(model);
 }
 
 export async function getChatbotModel(): Promise<GetChatbotModelOutput> {
@@ -70,10 +60,10 @@ export async function getChatbotModel(): Promise<GetChatbotModelOutput> {
 const updateChatbotPersonaFlow = ai.defineFlow(
   {
     name: 'updateChatbotPersonaFlow',
-    inputSchema: UpdateChatbotPersonaInputSchema,
+    inputSchema: z.string(),
     outputSchema: UpdateChatbotPersonaOutputSchema,
   },
-  async ({ persona }) => {
+  async (persona) => {
     try {
       const personaDocRef = doc(db, SETTINGS_COLLECTION, CHATBOT_PERSONA_DOC_ID);
       await setDoc(personaDocRef, {
@@ -121,10 +111,10 @@ const getChatbotPersonaFlow = ai.defineFlow(
 const updateChatbotModelFlow = ai.defineFlow(
   {
     name: 'updateChatbotModelFlow',
-    inputSchema: UpdateChatbotModelInputSchema,
+    inputSchema: z.string(),
     outputSchema: UpdateChatbotModelOutputSchema,
   },
-  async ({ model }) => {
+  async (model) => {
     try {
       const modelDocRef = doc(db, SETTINGS_COLLECTION, CHATBOT_MODEL_DOC_ID);
       await setDoc(modelDocRef, {
