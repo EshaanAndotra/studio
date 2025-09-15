@@ -246,11 +246,9 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 }
 
                 const [fileBuffer] = await file.download();
-                
-                const dataUri = `data:application/pdf;base64,${fileBuffer.toString('base64')}`;
 
                 const textContent = await googleAI.extractText(
-                  media({uri: dataUri})
+                  media({ data: fileBuffer, mimeType: 'application/pdf' })
                 );
                 
                 return `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
