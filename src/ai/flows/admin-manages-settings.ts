@@ -85,7 +85,7 @@ const getChatbotPersonaFlow = ai.defineFlow(
       }
     } catch (error) {
       console.error('Error getting chatbot persona:', error);
-      return { persona: undefined };
+      return { persona: '' };
     }
   }
 );
