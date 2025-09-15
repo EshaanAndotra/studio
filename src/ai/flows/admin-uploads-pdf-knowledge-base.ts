@@ -91,7 +91,6 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
       const bucket = adminStorage.bucket(STORAGE_BUCKET);
       const batch = writeBatch(db);
 
-      // 1. Upload files and prepare metadata for batch write
       for (const document of input.documents) {
         const uniqueId = uuidv4();
         const filePath = `knowledge_base/${uniqueId}_${document.fileName}`;
@@ -105,18 +104,15 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
         });
 
         const newDocRef = doc(collection(db, 'production_knowledge_documents'));
-        const metadata = {
+        batch.set(newDocRef, {
           fileName: document.fileName,
           uploadedAt: serverTimestamp(),
           filePath: filePath,
-        };
-        batch.set(newDocRef, metadata);
+        });
       }
       
-      // 2. Commit metadata to Firestore
       await batch.commit();
       
-      // 3. Trigger a full rebuild of the knowledge base
       const rebuildResult = await rebuildKnowledgeBaseFlow({});
       if (!rebuildResult.success) {
         throw new Error(`Knowledge base rebuild failed: ${rebuildResult.message}`);
@@ -136,7 +132,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
       }
       return {
         success: false,
-        message: `Failed to process PDFs. ${ (error as Error).message }`,
+        message: (error as Error).message || 'Failed to process PDFs.',
       };
     }
   }
@@ -160,15 +156,12 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
       
       const documentData = docSnap.data() as KnowledgeDocument;
       
-      // Delete file from Firebase Storage using Admin SDK
       const bucket = adminStorage.bucket(STORAGE_BUCKET);
       const file = bucket.file(documentData.filePath);
       await file.delete();
       
-      // Delete document from Firestore
       await deleteDoc(docRef);
 
-      // Trigger a rebuild of the knowledge base
       await rebuildKnowledgeBaseFlow({});
 
       return { success: true, message: `Document '${documentData.fileName}' deleted. Knowledge base is being updated.` };
@@ -204,7 +197,7 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 const [exists] = await file.exists();
                 if (!exists) {
                      console.warn(`File ${docInfo.filePath} not found in Storage for rebuild, skipping.`);
-                     return ''; // Skip if file doesn't exist
+                     return '';
                 }
 
                 const [fileBuffer] = await file.download();
@@ -217,14 +210,13 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 return `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
             } catch (fetchError) {
                 console.error(`Error processing file ${docInfo.fileName} for rebuild, skipping. Error:`, fetchError);
-                return ''; // Return empty string for failed files to avoid breaking the whole process
+                return '';
             }
         });
 
         const allTextContents = await Promise.all(textExtractionPromises);
         const combinedContent = allTextContents.filter(Boolean).join('');
         
-        // Overwrite the content with the newly combined text
         await setDoc(knowledgeDocRef, {
             content: combinedContent,
             lastUpdatedAt: serverTimestamp(),
