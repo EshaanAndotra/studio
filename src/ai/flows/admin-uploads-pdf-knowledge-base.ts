@@ -74,7 +74,7 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
 }
 
 export async function rebuildKnowledgeBase(): Promise<RebuildKnowledgeBaseOutput> {
-    return rebuildKnowledgeBaseFlow();
+    return rebuildKnowledgeBaseFlow({});
 }
 
 const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
@@ -110,7 +110,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
             metadata: { contentType: 'application/pdf' },
           });
 
-          const textContent = await googleAI.extractText(media({ data: Buffer.from(base64Data, 'base64'), mimeType: 'application/pdf' }));
+          const textContent = await googleAI.extractText(media({ data: buffer, mimeType: 'application/pdf' }));
 
           return {
             fileName: document.fileName,
@@ -205,7 +205,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
       await deleteDoc(docRef);
 
       // Trigger a rebuild of the knowledge base
-      await rebuildKnowledgeBaseFlow();
+      await rebuildKnowledgeBaseFlow({});
 
       return { success: true, message: `Document '${documentData.fileName}' deleted. Knowledge base is being updated.` };
     } catch (error) {
@@ -217,7 +217,7 @@ const deleteKnowledgeDocumentFlow = ai.defineFlow(
 
 const rebuildKnowledgeBaseFlow = ai.defineFlow({
     name: 'rebuildKnowledgeBaseFlow',
-    inputSchema: z.undefined(),
+    inputSchema: z.object({}),
     outputSchema: RebuildKnowledgeBaseOutputSchema,
 }, async () => {
     try {
