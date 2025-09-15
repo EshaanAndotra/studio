@@ -48,6 +48,18 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { updateUserProfileInfo } from '@/ai/flows/user-manages-own-profile';
+import { clearChatHistory } from '@/ai/flows/user-clears-chat-history';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 
 export type Message = {
@@ -144,6 +156,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -229,17 +242,28 @@ export default function ChatPage() {
     }
   };
 
-  const clearChat = async () => {
+  const handleClearChat = async () => {
     if (!user) return;
-
-    // This is a more complex operation, for now we will just clear the local state
-    // and show a toast. For a real implementation, a Cloud Function would be better
-    // to delete all subcollection documents.
-    setMessages([]);
-    toast({
-        title: 'Chat Cleared (Locally)',
-        description: 'Your conversation view has been cleared. Note: History is still saved.',
-    });
+    setIsClearing(true);
+    try {
+        const result = await clearChatHistory(user.id);
+        if (result.success) {
+            toast({
+                title: 'Chat History Cleared',
+                description: 'Your conversation has been permanently deleted.',
+            });
+        } else {
+            throw new Error(result.message);
+        }
+    } catch (error) {
+         toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: (error as Error).message || 'Could not clear chat history.',
+        });
+    } finally {
+        setIsClearing(false);
+    }
   };
 
   return (
@@ -251,14 +275,33 @@ export default function ChatPage() {
         </div>
         <div className="flex items-center gap-2">
           <UserProfileDialog />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={clearChat}
-            aria-label="Clear conversation"
-          >
-            <Trash2 className="h-5 w-5" />
-          </Button>
+          <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={isClearing}
+                    aria-label="Clear conversation"
+                >
+                    <Trash2 className="h-5 w-5" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete your entire chat history. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearChat} disabled={isClearing}>
+                    {isClearing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Clear History
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+          </AlertDialog>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
