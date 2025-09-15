@@ -99,7 +99,7 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
             metadata: { contentType: 'application/pdf' },
           });
 
-          const textContent = await googleAI.extractText(media({ uri: document.pdfDataUri }));
+          const textContent = await googleAI.extractText(media({ data: Buffer.from(base64Data, 'base64'), mimeType: 'application/pdf' }));
 
           return {
             fileName: document.fileName,
