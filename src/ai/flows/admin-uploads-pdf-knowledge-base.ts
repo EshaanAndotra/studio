@@ -15,7 +15,6 @@ import {z} from 'genkit';
 import { collection, addDoc, serverTimestamp, doc, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { googleAI } from '@genkit-ai/googleai';
-import { media } from 'genkit';
 import { storage as adminStorage } from '@/lib/firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -90,79 +89,42 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   async (input) => {
     try {
       const bucket = adminStorage.bucket(STORAGE_BUCKET);
-
-      // 1. Prepare documents with unique IDs first
-      const documentsWithIds = input.documents.map(doc => ({
-        ...doc,
-        uniqueId: uuidv4(),
-      }));
-
-      // 2. Process all documents in parallel (upload and text extraction)
-      const processingResults = await Promise.all(
-        documentsWithIds.map(async (document) => {
-          const filePath = `knowledge_base/${document.uniqueId}_${document.fileName}`;
-          const file = bucket.file(filePath);
-          
-          const base64Data = document.pdfDataUri.substring(document.pdfDataUri.indexOf(',') + 1);
-          const buffer = Buffer.from(base64Data, 'base64');
-          
-          await file.save(buffer, {
-            metadata: { contentType: 'application/pdf' },
-          });
-
-          const textContent = await googleAI.extractText({
-            media: { data: base64Data, mimeType: 'application/pdf' },
-          });
-
-          return {
-            fileName: document.fileName,
-            filePath: filePath,
-            textContent: `\n\n--- Content from ${document.fileName} ---\n\n${textContent}`,
-          };
-        })
-      );
-
-      // 3. Combine all text content
-      const combinedTextContent = processingResults.map(p => p.textContent).join('');
-
-      // 4. Perform a single atomic batch write to Firestore
       const batch = writeBatch(db);
 
-      // 4a. Add new document metadata to the batch
-      processingResults.forEach(result => {
+      // 1. Upload files and prepare metadata for batch write
+      for (const document of input.documents) {
+        const uniqueId = uuidv4();
+        const filePath = `knowledge_base/${uniqueId}_${document.fileName}`;
+        const file = bucket.file(filePath);
+        
+        const base64Data = document.pdfDataUri.substring(document.pdfDataUri.indexOf(',') + 1);
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        await file.save(buffer, {
+          metadata: { contentType: 'application/pdf' },
+        });
+
         const newDocRef = doc(collection(db, 'production_knowledge_documents'));
         const metadata = {
-          fileName: result.fileName,
+          fileName: document.fileName,
           uploadedAt: serverTimestamp(),
-          filePath: result.filePath,
+          filePath: filePath,
         };
         batch.set(newDocRef, metadata);
-      });
-      
-      // 4b. Update the main knowledge base document atomically in the batch
-      const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
-      const knowledgeDocSnap = await getDoc(knowledgeDocRef);
-
-      if (knowledgeDocSnap.exists()) {
-        const existingContent = knowledgeDocSnap.data().content || '';
-        batch.update(knowledgeDocRef, {
-          content: existingContent + combinedTextContent,
-          lastUpdatedAt: serverTimestamp(),
-        });
-      } else {
-        batch.set(knowledgeDocRef, {
-          content: combinedTextContent,
-          createdAt: serverTimestamp(),
-          lastUpdatedAt: serverTimestamp(),
-        });
       }
       
-      // 5. Commit the batch
+      // 2. Commit metadata to Firestore
       await batch.commit();
+      
+      // 3. Trigger a full rebuild of the knowledge base
+      const rebuildResult = await rebuildKnowledgeBaseFlow({});
+      if (!rebuildResult.success) {
+        throw new Error(`Knowledge base rebuild failed: ${rebuildResult.message}`);
+      }
 
       return {
         success: true,
-        message: `${input.documents.length} PDF(s) uploaded and added to knowledge base.`,
+        message: `${input.documents.length} PDF(s) uploaded. Knowledge base is being updated.`,
       };
     } catch (error: any) {
       console.error("Error processing PDFs:", error);
