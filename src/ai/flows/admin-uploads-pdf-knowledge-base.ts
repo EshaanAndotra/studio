@@ -110,7 +110,9 @@ const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
             metadata: { contentType: 'application/pdf' },
           });
 
-          const textContent = await googleAI.extractText(media({ data: buffer, mimeType: 'application/pdf' }));
+          const textContent = await googleAI.extractText({
+            media: { data: base64Data, mimeType: 'application/pdf' },
+          });
 
           return {
             fileName: document.fileName,
@@ -244,10 +246,11 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
                 }
 
                 const [fileBuffer] = await file.download();
+                const base64Data = fileBuffer.toString('base64');
 
-                const textContent = await googleAI.extractText(
-                  media({ data: fileBuffer, mimeType: 'application/pdf' })
-                );
+                const textContent = await googleAI.extractText({
+                  media: { data: base64Data, mimeType: 'application/pdf' },
+                });
                 
                 return `\n\n--- Content from ${docInfo.fileName} ---\n\n${textContent}`;
             } catch (fetchError) {
