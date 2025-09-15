@@ -68,7 +68,7 @@ export async function deleteKnowledgeDocument(docId: string): Promise<{ success:
 
 const KNOWLEDGE_COLLECTION = 'production_knowledge_base';
 const KNOWLEDGE_DOCUMENT_ID = 'main_document';
-const STORAGE_BUCKET = 'm-health-jxug7.appspot.com';
+const STORAGE_BUCKET = 'm-health-jxug7.firebasestorage.app';
 
 const adminUploadsPdfKnowledgeBaseFlow = ai.defineFlow(
   {
