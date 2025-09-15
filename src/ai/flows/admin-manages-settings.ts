@@ -75,11 +75,17 @@ const updateChatbotPersonaFlow = ai.defineFlow(
         success: true,
         message: 'Chatbot persona updated successfully.',
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating chatbot persona:', error);
+      if (error.code === 'permission-denied') {
+        return {
+          success: false,
+          message: "Permission Denied. Please grant the 'Cloud Datastore User' role to your App Hosting service account in the Google Cloud IAM console.",
+        };
+      }
       return {
         success: false,
-        message: 'Failed to update chatbot persona.',
+        message: (error as Error).message || 'Failed to update chatbot persona.',
       };
     }
   }
@@ -126,11 +132,17 @@ const updateChatbotModelFlow = ai.defineFlow(
         success: true,
         message: 'Chatbot model updated successfully.',
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating chatbot model:', error);
+       if (error.code === 'permission-denied') {
+        return {
+          success: false,
+          message: "Permission Denied. Please grant the 'Cloud Datastore User' role to your App Hosting service account in the Google Cloud IAM console.",
+        };
+      }
       return {
         success: false,
-        message: 'Failed to update chatbot model.',
+        message: (error as Error).message || 'Failed to update chatbot model.',
       };
     }
   }
@@ -150,6 +162,7 @@ const getChatbotModelFlow = ai.defineFlow(
       if (docSnap.exists() && docSnap.data().model) {
         return { model: docSnap.data().model };
       } else {
+        // Return a default model if not set
         return { model: 'gemini-2.5-flash' };
       }
     } catch (error) {
