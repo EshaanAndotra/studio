@@ -222,8 +222,6 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
 }, async () => {
     try {
         const allDocs = await getKnowledgeDocuments();
-        let combinedContent = '';
-
         const bucket = adminStorage.bucket(STORAGE_BUCKET);
 
         if (allDocs.length === 0) {
@@ -259,7 +257,7 @@ const rebuildKnowledgeBaseFlow = ai.defineFlow({
         });
 
         const allTextContents = await Promise.all(textExtractionPromises);
-        combinedContent = allTextContents.filter(Boolean).join('');
+        const combinedContent = allTextContents.filter(Boolean).join('');
         
         const knowledgeDocRef = doc(db, KNOWLEDGE_COLLECTION, KNOWLEDGE_DOCUMENT_ID);
         
